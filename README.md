@@ -65,3 +65,4 @@ print(result.top_observations())
 - This is a reference translation, not a production implementation.
 - For larger datasets, replace the hand-written linear algebra with NumPy and cache covariance work more aggressively.
 - The sparse grid defaults mirror the paper's idea, but you should tune the grid for your own use case.
+- Zero-threshold linear cells treat asymmetry as `0.0` when there is no censored complement, so their reliability weight does not get an artificial boost.

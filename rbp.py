@@ -309,11 +309,17 @@ class RelevanceBasedPredictor:
         prediction = sum(weight * outcome for weight, outcome in zip(observation_weights, self.y))
 
         fit = pearson_correlation(observation_weights, self.y) ** 2
-        positive_weights = self._observation_weights(relevance_scores, mask)
-        negative_weights = self._observation_weights(relevance_scores, [not keep for keep in mask])
-        asymmetry = 0.5 * (
-            pearson_correlation(positive_weights, self.y) - pearson_correlation(negative_weights, self.y)
-        ) ** 2
+        positive_count = len(retained_indices)
+        negative_mask = [not keep for keep in mask]
+        negative_count = len(mask) - positive_count
+        if positive_count < 2 or negative_count < 2:
+            asymmetry = 0.0
+        else:
+            positive_weights = self._observation_weights(relevance_scores, mask)
+            negative_weights = self._observation_weights(relevance_scores, negative_mask)
+            asymmetry = 0.5 * (
+                pearson_correlation(positive_weights, self.y) - pearson_correlation(negative_weights, self.y)
+            ) ** 2
         adjusted_fit = len(spec.feature_indices) * (fit + asymmetry)
 
         return CellResult(
