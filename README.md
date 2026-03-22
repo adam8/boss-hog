@@ -10,7 +10,9 @@ The goal here is clarity, not speed. The implementation uses only the Python sta
 
 - `rbp.py`: core RBP implementation
 - `example_rbp.py`: rolling demo on synthetic nonlinear data
+- `hog_price_baseline.py`: USDA-backed monthly hog-price-proxy baseline with price-only features
 - `tests/test_rbp.py`: smoke tests for weights, diagnostics, and predictive signal
+- `tests/test_hog_price_baseline.py`: offline tests for the hog data loader and feature builder
 
 ## How the code maps to the paper
 
@@ -35,8 +37,20 @@ The code also exposes two paper-style diagnostics:
 
 ```bash
 python3 example_rbp.py
+python3 hog_price_baseline.py --max-observations 240 --initial-window 120 --random-cells 20
 python3 -m unittest discover -s tests -v
 ```
+
+## Historical hog baseline
+
+`hog_price_baseline.py` downloads the USDA ERS historical monthly meat price-spread file, filters the `Pork gross farm value` series, and treats it as a simple hog-price proxy. It then builds a price-only dataset with:
+
+- 1, 3, 6, and 12 month log-return momentum
+- 3 and 12 month moving-average gaps
+- 3 and 12 month realized volatility
+- month-of-year seasonality encoded as sine/cosine
+
+The target is the next month's log return. The script runs a rolling out-of-sample RBP backtest and prints correlation, directional accuracy, average ex-ante fit, and the final predicted versus realized next-month move.
 
 ## Minimal usage
 
@@ -66,3 +80,4 @@ print(result.top_observations())
 - For larger datasets, replace the hand-written linear algebra with NumPy and cache covariance work more aggressively.
 - The sparse grid defaults mirror the paper's idea, but you should tune the grid for your own use case.
 - Zero-threshold linear cells treat asymmetry as `0.0` when there is no censored complement, so their reliability weight does not get an artificial boost.
+- The hog baseline starts with a univariate USDA farm-value proxy. It is a useful sandbox, but direct cash hog prices, futures structure, feed costs, slaughter data, and pork cutout values should improve a serious model.
