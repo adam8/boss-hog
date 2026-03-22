@@ -10,7 +10,7 @@ The goal here is clarity, not speed. The implementation uses only the Python sta
 
 - `rbp.py`: core RBP implementation
 - `example_rbp.py`: rolling demo on synthetic nonlinear data
-- `hog_price_baseline.py`: USDA AMS direct-hog baseline aggregated to monthly features
+- `hog_price_baseline.py`: USDA AMS direct-hog baseline with optional same-report fundamentals
 - `tests/test_rbp.py`: smoke tests for weights, diagnostics, and predictive signal
 - `tests/test_hog_price_baseline.py`: offline tests for the hog data loader and feature builder
 
@@ -38,19 +38,45 @@ The code also exposes two paper-style diagnostics:
 ```bash
 python3 example_rbp.py
 python3 hog_price_baseline.py --max-observations 240 --initial-window 120 --random-cells 20
+python3 hog_price_baseline.py --feature-pack core_fundamentals --max-observations 240 --initial-window 120 --random-cells 20
 python3 -m unittest discover -s tests -v
 ```
 
 ## Historical hog baseline
 
-`hog_price_baseline.py` downloads USDA AMS direct hog `avg_net_price` history for `Prod. Sold (All Purchase Types)`, caches the daily series locally, and aggregates it to monthly averages before feature building. It then creates a price-only dataset with:
+`hog_price_baseline.py` downloads USDA AMS direct hog history for `Prod. Sold (All Purchase Types)`, caches a versioned daily CSV locally, and aggregates the daily report to monthly arithmetic averages before feature building.
+
+The cache schema is:
+
+- `schema_version`
+- `date`
+- `avg_net_price`
+- `head_count`
+- `avg_live_weight`
+- `avg_carcass_weight`
+- `avg_sort_loss`
+- `avg_backfat`
+- `avg_loin_depth`
+- `avg_lean_percent`
+
+The default `price_only` feature pack uses:
 
 - 1, 3, 6, and 12 month log-return momentum
 - 3 and 12 month moving-average gaps
 - 3 and 12 month realized volatility
 - month-of-year seasonality encoded as sine/cosine
 
-The target is the next month's log return. The script runs a rolling out-of-sample RBP backtest and prints correlation, directional accuracy, average ex-ante fit, and the final predicted versus realized next-month move.
+The optional `core_fundamentals` feature pack appends these monthly level features in the same training row:
+
+- `head_count_avg`
+- `live_weight_avg`
+- `carcass_weight_avg`
+- `sort_loss_avg`
+- `backfat_avg`
+- `loin_depth_avg`
+- `lean_percent_avg`
+
+The target is still the next month's log return. The script runs a rolling out-of-sample RBP backtest and prints the selected feature pack, overall metrics, averaged variable importance across the rolling predictions, and the final predicted versus realized next-month move.
 
 ## Minimal usage
 
@@ -80,4 +106,5 @@ print(result.top_observations())
 - For larger datasets, replace the hand-written linear algebra with NumPy and cache covariance work more aggressively.
 - The sparse grid defaults mirror the paper's idea, but you should tune the grid for your own use case.
 - Zero-threshold linear cells treat asymmetry as `0.0` when there is no censored complement, so their reliability weight does not get an artificial boost.
-- The hog baseline now uses a truer direct cash hog series, but it is still univariate. Futures structure, feed costs, slaughter data, and pork cutout values should improve a serious model.
+- The first exogenous-feature pack intentionally stays inside the same USDA AMS direct-hog report so the common history stays long and the diagnostics stay readable.
+- Pork cutout and primal-value features from USDA AMS report `2498` are deferred for now because they materially shorten the common history relative to the direct-hog report.

@@ -12,21 +12,66 @@ from typing import Iterator, Sequence
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from rbp import RelevanceBasedPredictor, pearson_correlation, rolling_predictions
+from rbp import RelevanceBasedPredictor, rolling_predictions
 
 
 AMS_REPORT_ID = "2511"
 AMS_API_URL = f"https://mpr.datamart.ams.usda.gov/services/v1.1/reports/{AMS_REPORT_ID}/"
+CACHE_SCHEMA_VERSION = "2"
 DEFAULT_PURCHASE_TYPE = "Prod. Sold (All Purchase Types)"
 DEFAULT_START_DATE = date(2002, 1, 1)
-DEFAULT_CACHE_PATH = Path(__file__).resolve().parent / "data" / "usda_ams_direct_hog_daily.csv"
+DEFAULT_CACHE_PATH = Path(__file__).resolve().parent / "data" / "usda_ams_direct_hog_daily_v2.csv"
 MAX_API_RANGE_DAYS = 180
+PRICE_ONLY_FEATURE_PACK = "price_only"
+CORE_FUNDAMENTALS_FEATURE_PACK = "core_fundamentals"
+PRICE_FEATURE_NAMES = [
+    "ret_1m",
+    "ret_3m",
+    "ret_6m",
+    "ret_12m",
+    "ma_gap_3m",
+    "ma_gap_12m",
+    "vol_3m",
+    "vol_12m",
+    "month_sin",
+    "month_cos",
+]
+CORE_FUNDAMENTAL_FEATURES = [
+    ("head_count_avg", "head_count"),
+    ("live_weight_avg", "avg_live_weight"),
+    ("carcass_weight_avg", "avg_carcass_weight"),
+    ("sort_loss_avg", "avg_sort_loss"),
+    ("backfat_avg", "avg_backfat"),
+    ("loin_depth_avg", "avg_loin_depth"),
+    ("lean_percent_avg", "avg_lean_percent"),
+]
+CACHE_NUMERIC_FIELDS = [
+    "avg_net_price",
+    "head_count",
+    "avg_live_weight",
+    "avg_carcass_weight",
+    "avg_sort_loss",
+    "avg_backfat",
+    "avg_loin_depth",
+    "avg_lean_percent",
+]
+FEATURE_PACKS = {
+    PRICE_ONLY_FEATURE_PACK: (),
+    CORE_FUNDAMENTALS_FEATURE_PACK: tuple(CORE_FUNDAMENTAL_FEATURES),
+}
 
 
 @dataclass(frozen=True)
-class PricePoint:
+class HogObservation:
     date: str
-    price: float
+    avg_net_price: float | None
+    head_count: float | None = None
+    avg_live_weight: float | None = None
+    avg_carcass_weight: float | None = None
+    avg_sort_loss: float | None = None
+    avg_backfat: float | None = None
+    avg_loin_depth: float | None = None
+    avg_lean_percent: float | None = None
 
 
 @dataclass(frozen=True)
@@ -42,6 +87,8 @@ class SupervisedDataset:
 @dataclass(frozen=True)
 class BacktestSummary:
     series_name: str
+    feature_pack: str
+    feature_names: list[str]
     source_path: Path
     observation_count: int
     train_window: int
@@ -54,6 +101,8 @@ class BacktestSummary:
     correlation: float
     directional_accuracy: float
     average_fit: float
+    average_variable_importance: dict[str, float]
+    average_exogenous_variable_importance: dict[str, float]
 
 
 def download_direct_hog_history(
@@ -72,116 +121,166 @@ def download_direct_hog_history(
     if start_date > final_date:
         raise ValueError("start_date must be on or before end_date.")
 
-    observed_prices: dict[str, float] = {}
+    observed_rows: dict[str, HogObservation] = {}
     for chunk_start, chunk_end in _date_chunks(start_date, final_date):
-        for point in _fetch_direct_hog_chunk(
+        for observation in _fetch_direct_hog_chunk(
             purchase_type=purchase_type,
             start_date=chunk_start,
             end_date=chunk_end,
         ):
-            observed_prices[point.date] = point.price
+            observed_rows[observation.date] = observation
 
-    if not observed_prices:
+    if not observed_rows:
         raise ValueError(f"No direct hog prices found for purchase type {purchase_type!r}.")
 
     with cache_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["date", "avg_net_price"])
-        for point_date in sorted(observed_prices):
-            writer.writerow([point_date, f"{observed_prices[point_date]:.4f}"])
+        writer.writerow(["schema_version", "date", *CACHE_NUMERIC_FIELDS])
+        for point_date in sorted(observed_rows):
+            observation = observed_rows[point_date]
+            writer.writerow(
+                [
+                    CACHE_SCHEMA_VERSION,
+                    observation.date,
+                    *[_format_optional_float(getattr(observation, field_name)) for field_name in CACHE_NUMERIC_FIELDS],
+                ]
+            )
 
     return cache_path
 
 
-def load_cached_daily_series(path: Path) -> list[PricePoint]:
+def load_cached_daily_series(path: Path) -> list[HogObservation]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
-        series = [
-            PricePoint(date=row["date"], price=float(row["avg_net_price"]))
-            for row in reader
-            if row["date"] and row["avg_net_price"]
-        ]
+        if reader.fieldnames is None:
+            raise ValueError(f"Missing CSV header in {path}.")
+
+        expected_columns = {"schema_version", "date", *CACHE_NUMERIC_FIELDS}
+        missing_columns = expected_columns.difference(reader.fieldnames)
+        if missing_columns:
+            missing = ", ".join(sorted(missing_columns))
+            raise ValueError(f"Missing required cache columns in {path}: {missing}.")
+
+        series: list[HogObservation] = []
+        for row in reader:
+            if row["schema_version"] != CACHE_SCHEMA_VERSION:
+                raise ValueError(
+                    f"Unsupported cache schema version {row['schema_version']!r} in {path}; "
+                    f"expected {CACHE_SCHEMA_VERSION!r}."
+                )
+            if not row["date"]:
+                continue
+            series.append(
+                HogObservation(
+                    date=row["date"],
+                    avg_net_price=_parse_optional_float(row["avg_net_price"]),
+                    head_count=_parse_optional_float(row["head_count"]),
+                    avg_live_weight=_parse_optional_float(row["avg_live_weight"]),
+                    avg_carcass_weight=_parse_optional_float(row["avg_carcass_weight"]),
+                    avg_sort_loss=_parse_optional_float(row["avg_sort_loss"]),
+                    avg_backfat=_parse_optional_float(row["avg_backfat"]),
+                    avg_loin_depth=_parse_optional_float(row["avg_loin_depth"]),
+                    avg_lean_percent=_parse_optional_float(row["avg_lean_percent"]),
+                )
+            )
 
     if not series:
         raise ValueError(f"No cached direct hog rows found in {path}.")
     return sorted(series, key=lambda point: point.date)
 
 
-def aggregate_monthly_average(series: Sequence[PricePoint]) -> list[PricePoint]:
-    grouped: dict[str, list[float]] = {}
-    for point in series:
-        month_key = point.date[:7]
-        grouped.setdefault(month_key, []).append(point.price)
+def aggregate_monthly_average(series: Sequence[HogObservation]) -> list[HogObservation]:
+    grouped: dict[str, list[HogObservation]] = {}
+    for observation in series:
+        month_key = observation.date[:7]
+        grouped.setdefault(month_key, []).append(observation)
 
-    return [
-        PricePoint(date=f"{month_key}-01", price=mean(prices))
-        for month_key, prices in sorted(grouped.items())
-    ]
+    monthly_rows: list[HogObservation] = []
+    for month_key, rows in sorted(grouped.items()):
+        monthly_rows.append(
+            HogObservation(
+                date=f"{month_key}-01",
+                avg_net_price=_mean_optional(row.avg_net_price for row in rows),
+                head_count=_mean_optional(row.head_count for row in rows),
+                avg_live_weight=_mean_optional(row.avg_live_weight for row in rows),
+                avg_carcass_weight=_mean_optional(row.avg_carcass_weight for row in rows),
+                avg_sort_loss=_mean_optional(row.avg_sort_loss for row in rows),
+                avg_backfat=_mean_optional(row.avg_backfat for row in rows),
+                avg_loin_depth=_mean_optional(row.avg_loin_depth for row in rows),
+                avg_lean_percent=_mean_optional(row.avg_lean_percent for row in rows),
+            )
+        )
+    return monthly_rows
 
 
-def build_price_only_dataset(
-    series: Sequence[PricePoint],
+def build_monthly_dataset(
+    series: Sequence[HogObservation],
     *,
     lookback: int = 12,
+    feature_pack: str = PRICE_ONLY_FEATURE_PACK,
 ) -> SupervisedDataset:
+    _validate_feature_pack(feature_pack)
     if lookback < 12:
         raise ValueError("lookback must be at least 12.")
     if len(series) <= lookback + 1:
         raise ValueError("Series is too short for the requested lookback.")
 
-    prices = [point.price for point in series]
-    returns = [0.0]
-    for previous, current in zip(prices, prices[1:]):
-        if previous <= 0.0 or current <= 0.0:
-            raise ValueError("Prices must be positive to compute log returns.")
-        returns.append(math.log(current / previous))
-
-    feature_names = [
-        "ret_1m",
-        "ret_3m",
-        "ret_6m",
-        "ret_12m",
-        "ma_gap_3m",
-        "ma_gap_12m",
-        "vol_3m",
-        "vol_12m",
-        "month_sin",
-        "month_cos",
+    observations = sorted(series, key=lambda point: point.date)
+    feature_names = PRICE_FEATURE_NAMES + [
+        public_name
+        for public_name, _ in FEATURE_PACKS[feature_pack]
     ]
+    selected_fields = [field_name for _, field_name in FEATURE_PACKS[feature_pack]]
     rows: list[list[float]] = []
     targets: list[float] = []
     dates: list[str] = []
     current_prices: list[float] = []
     next_prices: list[float] = []
 
-    for index in range(lookback, len(series) - 1):
-        trailing_returns = returns[1 : index + 1]
-        ret_3m_window = trailing_returns[-3:]
-        ret_6m_window = trailing_returns[-6:]
-        ret_12m_window = trailing_returns[-12:]
-        trailing_prices = prices[: index + 1]
-        price_3m_window = trailing_prices[-3:]
-        price_12m_window = trailing_prices[-12:]
-        month_number = int(series[index].date[5:7])
+    for index in range(lookback, len(observations) - 1):
+        window = observations[index - lookback : index + 2]
+        if not _has_consecutive_months(window):
+            continue
 
-        rows.append(
-            [
-                returns[index],
-                sum(ret_3m_window),
-                sum(ret_6m_window),
-                sum(ret_12m_window),
-                prices[index] / mean(price_3m_window) - 1.0,
-                prices[index] / mean(price_12m_window) - 1.0,
-                _sample_standard_deviation(ret_3m_window),
-                _sample_standard_deviation(ret_12m_window),
-                math.sin(2.0 * math.pi * month_number / 12.0),
-                math.cos(2.0 * math.pi * month_number / 12.0),
-            ]
-        )
-        targets.append(returns[index + 1])
-        dates.append(series[index + 1].date)
-        current_prices.append(prices[index])
-        next_prices.append(prices[index + 1])
+        history = observations[index - lookback : index + 1]
+        current = observations[index]
+        target = observations[index + 1]
+        price_window = [point.avg_net_price for point in history]
+        target_price = target.avg_net_price
+        if any(price is None or price <= 0.0 for price in price_window):
+            continue
+        if target_price is None or target_price <= 0.0:
+            continue
+        if any(getattr(current, field_name) is None for field_name in selected_fields):
+            continue
+
+        current_prices_window = [float(price) for price in price_window]
+        trailing_returns = [
+            math.log(current_price / previous_price)
+            for previous_price, current_price in zip(current_prices_window, current_prices_window[1:])
+        ]
+        month_number = int(current.date[5:7])
+        row = [
+            trailing_returns[-1],
+            sum(trailing_returns[-3:]),
+            sum(trailing_returns[-6:]),
+            sum(trailing_returns[-12:]),
+            current_prices_window[-1] / mean(current_prices_window[-3:]) - 1.0,
+            current_prices_window[-1] / mean(current_prices_window[-12:]) - 1.0,
+            _sample_standard_deviation(trailing_returns[-3:]),
+            _sample_standard_deviation(trailing_returns[-12:]),
+            math.sin(2.0 * math.pi * month_number / 12.0),
+            math.cos(2.0 * math.pi * month_number / 12.0),
+        ]
+        row.extend(float(getattr(current, field_name)) for field_name in selected_fields)
+        rows.append(row)
+        targets.append(math.log(float(target_price) / current_prices_window[-1]))
+        dates.append(target.date)
+        current_prices.append(current_prices_window[-1])
+        next_prices.append(float(target_price))
+
+    if not rows:
+        raise ValueError("No supervised rows were produced for the selected feature pack.")
 
     return SupervisedDataset(
         X=rows,
@@ -193,8 +292,16 @@ def build_price_only_dataset(
     )
 
 
-def run_price_only_backtest(
-    series: Sequence[PricePoint],
+def build_price_only_dataset(
+    series: Sequence[HogObservation],
+    *,
+    lookback: int = 12,
+) -> SupervisedDataset:
+    return build_monthly_dataset(series, lookback=lookback, feature_pack=PRICE_ONLY_FEATURE_PACK)
+
+
+def run_monthly_backtest(
+    series: Sequence[HogObservation],
     *,
     series_name: str = DEFAULT_PURCHASE_TYPE,
     source_path: Path = DEFAULT_CACHE_PATH,
@@ -202,8 +309,9 @@ def run_price_only_backtest(
     initial_window: int = 120,
     random_cells: int = 30,
     seed: int = 11,
+    feature_pack: str = PRICE_ONLY_FEATURE_PACK,
 ) -> BacktestSummary:
-    dataset = build_price_only_dataset(series, lookback=lookback)
+    dataset = build_monthly_dataset(series, lookback=lookback, feature_pack=feature_pack)
     if initial_window >= len(dataset.X):
         raise ValueError("initial_window must be smaller than the supervised sample size.")
 
@@ -227,9 +335,24 @@ def run_price_only_backtest(
         for prediction, actual in zip(predictions, actuals)
     )
     average_fit = mean(result.fit for result in results)
+    average_variable_importance = {
+        feature_name: mean(result.variable_importance[feature_name] for result in results)
+        for feature_name in dataset.feature_names
+    }
+    exogenous_feature_names = [
+        feature_name
+        for feature_name in dataset.feature_names
+        if feature_name not in PRICE_FEATURE_NAMES
+    ]
+    average_exogenous_variable_importance = {
+        feature_name: average_variable_importance[feature_name]
+        for feature_name in exogenous_feature_names
+    }
 
     return BacktestSummary(
         series_name=series_name,
+        feature_pack=feature_pack,
+        feature_names=dataset.feature_names,
         source_path=source_path,
         observation_count=len(series),
         train_window=initial_window,
@@ -239,21 +362,45 @@ def run_price_only_backtest(
         implied_next_prices=implied_next_prices,
         current_prices=current_prices,
         next_prices=next_prices,
-        correlation=pearson_correlation(predictions, actuals),
+        correlation=_pearson_correlation(predictions, actuals),
         directional_accuracy=directional_accuracy,
         average_fit=average_fit,
+        average_variable_importance=average_variable_importance,
+        average_exogenous_variable_importance=average_exogenous_variable_importance,
+    )
+
+
+def run_price_only_backtest(
+    series: Sequence[HogObservation],
+    *,
+    series_name: str = DEFAULT_PURCHASE_TYPE,
+    source_path: Path = DEFAULT_CACHE_PATH,
+    lookback: int = 12,
+    initial_window: int = 120,
+    random_cells: int = 30,
+    seed: int = 11,
+) -> BacktestSummary:
+    return run_monthly_backtest(
+        series,
+        series_name=series_name,
+        source_path=source_path,
+        lookback=lookback,
+        initial_window=initial_window,
+        random_cells=random_cells,
+        seed=seed,
+        feature_pack=PRICE_ONLY_FEATURE_PACK,
     )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Fetch USDA AMS direct hog prices and run a monthly price-only RBP backtest.",
+        description="Fetch USDA AMS direct hog data and run a monthly RBP backtest.",
     )
     parser.add_argument(
         "--cache-path",
         type=Path,
         default=DEFAULT_CACHE_PATH,
-        help="Where to cache the normalized daily direct hog CSV.",
+        help="Where to cache the versioned daily direct hog CSV.",
     )
     parser.add_argument(
         "--purchase-type",
@@ -300,6 +447,12 @@ def parse_args() -> argparse.Namespace:
         help="Random seed for the sparse-grid sampler.",
     )
     parser.add_argument(
+        "--feature-pack",
+        choices=sorted(FEATURE_PACKS),
+        default=PRICE_ONLY_FEATURE_PACK,
+        help="Feature set to include in the monthly supervised dataset.",
+    )
+    parser.add_argument(
         "--max-observations",
         type=int,
         default=None,
@@ -325,7 +478,7 @@ def main() -> None:
         if args.max_observations < 14:
             raise ValueError("max_observations must be at least 14.")
         series = series[-args.max_observations :]
-    summary = run_price_only_backtest(
+    summary = run_monthly_backtest(
         series,
         series_name=args.purchase_type,
         source_path=csv_path,
@@ -333,11 +486,13 @@ def main() -> None:
         initial_window=args.initial_window,
         random_cells=args.random_cells,
         seed=args.seed,
+        feature_pack=args.feature_pack,
     )
 
     print("Historical hog price baseline")
     print("Source series: USDA AMS direct hog avg_net_price")
     print(f"Purchase type: {args.purchase_type}")
+    print(f"Feature pack: {summary.feature_pack}")
     print(f"Cached CSV: {csv_path}")
     print(f"Daily observations cached: {len(daily_series)}")
     print(f"Monthly observations: {summary.observation_count}")
@@ -345,6 +500,12 @@ def main() -> None:
     print(f"Prediction/actual correlation: {summary.correlation:.3f}")
     print(f"Directional accuracy: {summary.directional_accuracy:.3f}")
     print(f"Average ex-ante fit: {summary.average_fit:.3f}")
+    _print_importances("Top average feature importances", summary.average_variable_importance)
+    if summary.average_exogenous_variable_importance:
+        _print_importances(
+            "Top average exogenous feature importances",
+            summary.average_exogenous_variable_importance,
+        )
 
     last_index = len(summary.predictions) - 1
     print("\nFinal out-of-sample month")
@@ -361,7 +522,7 @@ def _fetch_direct_hog_chunk(
     purchase_type: str,
     start_date: date,
     end_date: date,
-) -> list[PricePoint]:
+) -> list[HogObservation]:
     query = urlencode(
         {
             "q": f"report_date={_format_ams_date(start_date)}:{_format_ams_date(end_date)}",
@@ -378,9 +539,16 @@ def _fetch_direct_hog_chunk(
         if section.get("reportSection") != "Barrows/Gilts":
             continue
         return [
-            PricePoint(
+            HogObservation(
                 date=_normalize_report_date(row["report_date"]),
-                price=float(row["avg_net_price"].replace(",", "")),
+                avg_net_price=_parse_optional_float(row.get("avg_net_price")),
+                head_count=_parse_optional_float(row.get("head_count")),
+                avg_live_weight=_parse_optional_float(row.get("avg_live_weight")),
+                avg_carcass_weight=_parse_optional_float(row.get("avg_carcass_weight")),
+                avg_sort_loss=_parse_optional_float(row.get("avg_sort_loss")),
+                avg_backfat=_parse_optional_float(row.get("avg_backfat")),
+                avg_loin_depth=_parse_optional_float(row.get("avg_loin_depth")),
+                avg_lean_percent=_parse_optional_float(row.get("avg_lean_percent")),
             )
             for row in section.get("results", [])
             if row.get("purchase_type") == purchase_type and row.get("avg_net_price")
@@ -394,6 +562,45 @@ def _date_chunks(start_date: date, end_date: date) -> Iterator[tuple[date, date]
         chunk_end = min(cursor + timedelta(days=MAX_API_RANGE_DAYS - 1), end_date)
         yield cursor, chunk_end
         cursor = chunk_end + timedelta(days=1)
+
+
+def _mean_optional(values: Sequence[float | None] | Iterator[float | None]) -> float | None:
+    sample = [value for value in values if value is not None]
+    if not sample:
+        return None
+    return mean(sample)
+
+
+def _parse_optional_float(raw_value: str | None) -> float | None:
+    if raw_value is None:
+        return None
+    normalized = raw_value.replace(",", "").strip()
+    if not normalized:
+        return None
+    return float(normalized)
+
+
+def _format_optional_float(value: float | None) -> str:
+    if value is None:
+        return ""
+    return f"{value:.4f}"
+
+
+def _validate_feature_pack(feature_pack: str) -> None:
+    if feature_pack not in FEATURE_PACKS:
+        valid = ", ".join(sorted(FEATURE_PACKS))
+        raise ValueError(f"Unknown feature_pack {feature_pack!r}; expected one of {valid}.")
+
+
+def _has_consecutive_months(series: Sequence[HogObservation]) -> bool:
+    month_indices = [_month_index(point.date) for point in series]
+    return all(current == previous + 1 for previous, current in zip(month_indices, month_indices[1:]))
+
+
+def _month_index(date_string: str) -> int:
+    year = int(date_string[:4])
+    month = int(date_string[5:7])
+    return year * 12 + month
 
 
 def _normalize_report_date(raw_date: str) -> str:
@@ -414,6 +621,36 @@ def _sample_standard_deviation(values: Sequence[float]) -> float:
     average = mean(values)
     variance = sum((value - average) ** 2 for value in values) / (len(values) - 1)
     return math.sqrt(variance)
+
+
+def _pearson_correlation(left: Sequence[float], right: Sequence[float]) -> float:
+    if len(left) != len(right):
+        raise ValueError("Inputs must have the same length.")
+    if len(left) < 2:
+        return 0.0
+
+    left_mean = mean(left)
+    right_mean = mean(right)
+    left_centered = [value - left_mean for value in left]
+    right_centered = [value - right_mean for value in right]
+    covariance = sum(a * b for a, b in zip(left_centered, right_centered))
+    left_norm = math.sqrt(sum(value * value for value in left_centered))
+    right_norm = math.sqrt(sum(value * value for value in right_centered))
+    if left_norm == 0.0 or right_norm == 0.0:
+        return 0.0
+    return covariance / (left_norm * right_norm)
+
+
+def _print_importances(title: str, importances: dict[str, float], *, count: int = 5) -> None:
+    if not importances:
+        return
+    print(f"\n{title}")
+    for feature_name, importance in sorted(
+        importances.items(),
+        key=lambda item: item[1],
+        reverse=True,
+    )[:count]:
+        print(f"{feature_name:>20}: {importance:.4f}")
 
 
 if __name__ == "__main__":
