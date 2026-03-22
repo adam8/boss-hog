@@ -3,21 +3,24 @@ from __future__ import annotations
 import argparse
 import csv
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+import json
 import math
 from pathlib import Path
 from statistics import mean
-from typing import Sequence
+from typing import Iterator, Sequence
+from urllib.parse import urlencode
 from urllib.request import urlopen
 
 from rbp import RelevanceBasedPredictor, pearson_correlation, rolling_predictions
 
 
-ERS_HISTORY_URL = (
-    "https://www.ers.usda.gov/media/5028/"
-    "historical-monthly-price-spread-data-for-beef-pork-broilers.csv?v=90046"
-)
-DEFAULT_DATA_ITEM = "Pork gross farm value"
-DEFAULT_CACHE_PATH = Path(__file__).resolve().parent / "data" / "ers_meat_history.csv"
+AMS_REPORT_ID = "2511"
+AMS_API_URL = f"https://mpr.datamart.ams.usda.gov/services/v1.1/reports/{AMS_REPORT_ID}/"
+DEFAULT_PURCHASE_TYPE = "Prod. Sold (All Purchase Types)"
+DEFAULT_START_DATE = date(2002, 1, 1)
+DEFAULT_CACHE_PATH = Path(__file__).resolve().parent / "data" / "usda_ams_direct_hog_daily.csv"
+MAX_API_RANGE_DAYS = 180
 
 
 @dataclass(frozen=True)
@@ -38,7 +41,7 @@ class SupervisedDataset:
 
 @dataclass(frozen=True)
 class BacktestSummary:
-    data_item: str
+    series_name: str
     source_path: Path
     observation_count: int
     train_window: int
@@ -53,39 +56,67 @@ class BacktestSummary:
     average_fit: float
 
 
-def download_ers_history(
+def download_direct_hog_history(
     cache_path: Path = DEFAULT_CACHE_PATH,
     *,
+    purchase_type: str = DEFAULT_PURCHASE_TYPE,
+    start_date: date = DEFAULT_START_DATE,
+    end_date: date | None = None,
     force: bool = False,
 ) -> Path:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     if cache_path.exists() and not force:
         return cache_path
 
-    with urlopen(ERS_HISTORY_URL) as response:
-        cache_path.write_bytes(response.read())
+    final_date = date.today() if end_date is None else end_date
+    if start_date > final_date:
+        raise ValueError("start_date must be on or before end_date.")
+
+    observed_prices: dict[str, float] = {}
+    for chunk_start, chunk_end in _date_chunks(start_date, final_date):
+        for point in _fetch_direct_hog_chunk(
+            purchase_type=purchase_type,
+            start_date=chunk_start,
+            end_date=chunk_end,
+        ):
+            observed_prices[point.date] = point.price
+
+    if not observed_prices:
+        raise ValueError(f"No direct hog prices found for purchase type {purchase_type!r}.")
+
+    with cache_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["date", "avg_net_price"])
+        for point_date in sorted(observed_prices):
+            writer.writerow([point_date, f"{observed_prices[point_date]:.4f}"])
+
     return cache_path
 
 
-def load_ers_price_series(
-    path: Path,
-    *,
-    data_item: str = DEFAULT_DATA_ITEM,
-) -> list[PricePoint]:
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+def load_cached_daily_series(path: Path) -> list[PricePoint]:
+    with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
-        points = [
-            PricePoint(
-                date=f"{int(row['Year']):04d}-{int(row['Month-number']):02d}-01",
-                price=float(row["Value"]),
-            )
+        series = [
+            PricePoint(date=row["date"], price=float(row["avg_net_price"]))
             for row in reader
-            if row["Data_Item"] == data_item and row["Value"]
+            if row["date"] and row["avg_net_price"]
         ]
 
-    if not points:
-        raise ValueError(f"No rows found for data item {data_item!r} in {path}.")
-    return sorted(points, key=lambda point: point.date)
+    if not series:
+        raise ValueError(f"No cached direct hog rows found in {path}.")
+    return sorted(series, key=lambda point: point.date)
+
+
+def aggregate_monthly_average(series: Sequence[PricePoint]) -> list[PricePoint]:
+    grouped: dict[str, list[float]] = {}
+    for point in series:
+        month_key = point.date[:7]
+        grouped.setdefault(month_key, []).append(point.price)
+
+    return [
+        PricePoint(date=f"{month_key}-01", price=mean(prices))
+        for month_key, prices in sorted(grouped.items())
+    ]
 
 
 def build_price_only_dataset(
@@ -165,7 +196,7 @@ def build_price_only_dataset(
 def run_price_only_backtest(
     series: Sequence[PricePoint],
     *,
-    data_item: str = DEFAULT_DATA_ITEM,
+    series_name: str = DEFAULT_PURCHASE_TYPE,
     source_path: Path = DEFAULT_CACHE_PATH,
     lookback: int = 12,
     initial_window: int = 120,
@@ -198,7 +229,7 @@ def run_price_only_backtest(
     average_fit = mean(result.fit for result in results)
 
     return BacktestSummary(
-        data_item=data_item,
+        series_name=series_name,
         source_path=source_path,
         observation_count=len(series),
         train_window=initial_window,
@@ -216,23 +247,33 @@ def run_price_only_backtest(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Fetch USDA ERS monthly pork data and run a price-only RBP backtest.",
+        description="Fetch USDA AMS direct hog prices and run a monthly price-only RBP backtest.",
     )
     parser.add_argument(
         "--cache-path",
         type=Path,
         default=DEFAULT_CACHE_PATH,
-        help="Where to cache the ERS CSV.",
+        help="Where to cache the normalized daily direct hog CSV.",
     )
     parser.add_argument(
-        "--data-item",
-        default=DEFAULT_DATA_ITEM,
-        help="ERS Data_Item value to extract. Defaults to a hog-price proxy.",
+        "--purchase-type",
+        default=DEFAULT_PURCHASE_TYPE,
+        help="USDA AMS purchase_type to extract from the direct hog report.",
+    )
+    parser.add_argument(
+        "--start-date",
+        default=DEFAULT_START_DATE.isoformat(),
+        help="Inclusive start date for the AMS history pull, in YYYY-MM-DD format.",
+    )
+    parser.add_argument(
+        "--end-date",
+        default=None,
+        help="Optional inclusive end date for the AMS history pull, in YYYY-MM-DD format.",
     )
     parser.add_argument(
         "--force-download",
         action="store_true",
-        help="Redownload the ERS CSV even if a cached copy exists.",
+        help="Refetch the AMS history even if a cached CSV exists.",
     )
     parser.add_argument(
         "--lookback",
@@ -269,15 +310,24 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    csv_path = download_ers_history(args.cache_path, force=args.force_download)
-    series = load_ers_price_series(csv_path, data_item=args.data_item)
+    start_date = _parse_iso_date(args.start_date)
+    end_date = None if args.end_date is None else _parse_iso_date(args.end_date)
+    csv_path = download_direct_hog_history(
+        args.cache_path,
+        purchase_type=args.purchase_type,
+        start_date=start_date,
+        end_date=end_date,
+        force=args.force_download,
+    )
+    daily_series = load_cached_daily_series(csv_path)
+    series = aggregate_monthly_average(daily_series)
     if args.max_observations is not None:
         if args.max_observations < 14:
             raise ValueError("max_observations must be at least 14.")
         series = series[-args.max_observations :]
     summary = run_price_only_backtest(
         series,
-        data_item=args.data_item,
+        series_name=args.purchase_type,
         source_path=csv_path,
         lookback=args.lookback,
         initial_window=args.initial_window,
@@ -286,8 +336,10 @@ def main() -> None:
     )
 
     print("Historical hog price baseline")
-    print(f"Source item: {args.data_item}")
+    print("Source series: USDA AMS direct hog avg_net_price")
+    print(f"Purchase type: {args.purchase_type}")
     print(f"Cached CSV: {csv_path}")
+    print(f"Daily observations cached: {len(daily_series)}")
     print(f"Monthly observations: {summary.observation_count}")
     print(f"Out-of-sample predictions: {len(summary.predictions)}")
     print(f"Prediction/actual correlation: {summary.correlation:.3f}")
@@ -299,9 +351,61 @@ def main() -> None:
     print(f"Date: {summary.prediction_dates[last_index]}")
     print(f"Predicted next-month log return: {summary.predictions[last_index]:.4f}")
     print(f"Actual next-month log return: {summary.actuals[last_index]:.4f}")
-    print(f"Current price proxy: {summary.current_prices[last_index]:.2f}")
-    print(f"Predicted next price proxy: {summary.implied_next_prices[last_index]:.2f}")
-    print(f"Actual next price proxy: {summary.next_prices[last_index]:.2f}")
+    print(f"Current monthly average direct hog price: {summary.current_prices[last_index]:.2f}")
+    print(f"Predicted next monthly average price: {summary.implied_next_prices[last_index]:.2f}")
+    print(f"Actual next monthly average price: {summary.next_prices[last_index]:.2f}")
+
+
+def _fetch_direct_hog_chunk(
+    *,
+    purchase_type: str,
+    start_date: date,
+    end_date: date,
+) -> list[PricePoint]:
+    query = urlencode(
+        {
+            "q": f"report_date={_format_ams_date(start_date)}:{_format_ams_date(end_date)}",
+            "allSections": "true",
+        }
+    )
+    with urlopen(f"{AMS_API_URL}?{query}") as response:
+        payload = json.loads(response.read().decode("utf-8", "ignore"))
+
+    if isinstance(payload, str):
+        return []
+
+    for section in payload:
+        if section.get("reportSection") != "Barrows/Gilts":
+            continue
+        return [
+            PricePoint(
+                date=_normalize_report_date(row["report_date"]),
+                price=float(row["avg_net_price"].replace(",", "")),
+            )
+            for row in section.get("results", [])
+            if row.get("purchase_type") == purchase_type and row.get("avg_net_price")
+        ]
+    return []
+
+
+def _date_chunks(start_date: date, end_date: date) -> Iterator[tuple[date, date]]:
+    cursor = start_date
+    while cursor <= end_date:
+        chunk_end = min(cursor + timedelta(days=MAX_API_RANGE_DAYS - 1), end_date)
+        yield cursor, chunk_end
+        cursor = chunk_end + timedelta(days=1)
+
+
+def _normalize_report_date(raw_date: str) -> str:
+    return datetime.strptime(raw_date, "%m/%d/%Y").strftime("%Y-%m-%d")
+
+
+def _format_ams_date(value: date) -> str:
+    return value.strftime("%m/%d/%Y")
+
+
+def _parse_iso_date(value: str) -> date:
+    return datetime.strptime(value, "%Y-%m-%d").date()
 
 
 def _sample_standard_deviation(values: Sequence[float]) -> float:

@@ -5,28 +5,42 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from hog_price_baseline import PricePoint, build_price_only_dataset, load_ers_price_series
+from hog_price_baseline import (
+    PricePoint,
+    aggregate_monthly_average,
+    build_price_only_dataset,
+    load_cached_daily_series,
+)
 
 
 class HogPriceBaselineTests(unittest.TestCase):
-    def test_load_ers_price_series_filters_requested_item(self) -> None:
+    def test_load_cached_daily_series_and_monthly_aggregation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            csv_path = Path(directory) / "ers.csv"
+            csv_path = Path(directory) / "direct_hog.csv"
             csv_path.write_text(
-                "\ufeffYear,Month,Month-number,Data_Item,Value,Units\n"
-                "2024,January,1,Pork gross farm value,80.0,Cents\n"
-                "2024,January,1,Pork net farm value,75.0,Cents\n"
-                "2024,February,2,Pork gross farm value,84.0,Cents\n",
+                "date,avg_net_price\n"
+                "2024-01-02,80.0\n"
+                "2024-01-03,82.0\n"
+                "2024-02-01,90.0\n",
                 encoding="utf-8",
             )
 
-            series = load_ers_price_series(csv_path)
+            daily_series = load_cached_daily_series(csv_path)
+            monthly_series = aggregate_monthly_average(daily_series)
 
         self.assertEqual(
-            series,
+            daily_series,
             [
-                PricePoint(date="2024-01-01", price=80.0),
-                PricePoint(date="2024-02-01", price=84.0),
+                PricePoint(date="2024-01-02", price=80.0),
+                PricePoint(date="2024-01-03", price=82.0),
+                PricePoint(date="2024-02-01", price=90.0),
+            ],
+        )
+        self.assertEqual(
+            monthly_series,
+            [
+                PricePoint(date="2024-01-01", price=81.0),
+                PricePoint(date="2024-02-01", price=90.0),
             ],
         )
 
