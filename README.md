@@ -11,8 +11,10 @@ The goal here is clarity, not speed. The implementation uses only the Python sta
 - `rbp.py`: core RBP implementation
 - `example_rbp.py`: rolling demo on synthetic nonlinear data
 - `hog_price_baseline.py`: USDA AMS direct-hog baseline with optional same-report fundamentals
+- `hog_ui.py`: minimal local web UI for the hog backtest
 - `tests/test_rbp.py`: smoke tests for weights, diagnostics, and predictive signal
 - `tests/test_hog_price_baseline.py`: offline tests for the hog data loader and feature builder
+- `tests/test_hog_ui.py`: render-level smoke tests for the UI
 
 ## How the code maps to the paper
 
@@ -39,8 +41,20 @@ The code also exposes two paper-style diagnostics:
 python3 example_rbp.py
 python3 hog_price_baseline.py --max-observations 240 --initial-window 120 --random-cells 20
 python3 hog_price_baseline.py --feature-pack core_fundamentals --max-observations 240 --initial-window 120 --random-cells 20
+python3 hog_ui.py
 python3 -m unittest discover -s tests -v
 ```
+
+## Local UI
+
+`hog_ui.py` starts a small local server on `http://127.0.0.1:8000` with:
+
+- a compact control panel for the existing backtest parameters
+- inline info icons that expand to explain the controls and metrics
+- summary cards for correlation, directional accuracy, ex-ante fit, and feature pack
+- ranked average feature-importance views
+
+The UI calls the same `hog_price_baseline.py` pipeline under the hood, so it is a thin interface over the existing monthly RBP backtest rather than a separate model path.
 
 ## Historical hog baseline
 
