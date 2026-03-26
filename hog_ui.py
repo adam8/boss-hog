@@ -178,7 +178,7 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
 
       .eyebrow {{
         color: var(--accent);
-        font-size: 0.8rem;
+        font-size: 2rem;
         letter-spacing: 0.14em;
         text-transform: uppercase;
         font-weight: 700;
@@ -439,11 +439,6 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
       <section class="hero">
         <div class="eyebrow">Boss Hog</div>
         <h1>Monthly RBP Hog Explorer</h1>
-        <p>
-          Run the rolling hog backtest from a clean UI, compare the price-only baseline against the
-          same-report fundamentals pack, and expand the inline info icons when you want context
-          without clutter.
-        </p>
       </section>
 
       {error_html}
