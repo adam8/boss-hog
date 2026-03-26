@@ -92,14 +92,14 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
             <h2>Final Out-of-Sample Month</h2>
             {_info_button("final-info")}
           </div>
-          {_info_panel("final-info", "The most recent backtest month in the selected window. The prediction was produced using only prior months in the rolling training sample.")}
+          {_info_panel("final-info", "The most recent backtest month in the selected window. The prediction was produced using only prior months in the rolling training sample. Returns are log returns, and prices are monthly averages.")}
           <div class="detail-grid">
-            <div><span>Date</span><strong>{escape(summary.prediction_dates[last_index])}</strong></div>
-            <div><span>Predicted Return</span><strong>{summary.predictions[last_index]:.4f}</strong></div>
-            <div><span>Actual Return</span><strong>{summary.actuals[last_index]:.4f}</strong></div>
-            <div><span>Current Price</span><strong>{summary.current_prices[last_index]:.2f}</strong></div>
-            <div><span>Predicted Next Price</span><strong>{summary.implied_next_prices[last_index]:.2f}</strong></div>
-            <div><span>Actual Next Price</span><strong>{summary.next_prices[last_index]:.2f}</strong></div>
+            <div><span>Predicted Month</span><strong>{escape(summary.prediction_dates[last_index])}</strong></div>
+            <div><span>Predicted Next-Month Log Return</span><strong>{summary.predictions[last_index]:.4f}</strong></div>
+            <div><span>Actual Next-Month Log Return</span><strong>{summary.actuals[last_index]:.4f}</strong></div>
+            <div><span>Starting Month Price Average</span><strong>{summary.current_prices[last_index]:.2f}</strong></div>
+            <div><span>Predicted Next Month Price Average</span><strong>{summary.implied_next_prices[last_index]:.2f}</strong></div>
+            <div><span>Actual Next Month Price Average</span><strong>{summary.next_prices[last_index]:.2f}</strong></div>
           </div>
         </section>
         """
