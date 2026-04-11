@@ -11,10 +11,14 @@ The goal here is clarity, not speed. The implementation uses only the Python sta
 - `rbp.py`: core RBP implementation
 - `example_rbp.py`: rolling demo on synthetic nonlinear data
 - `hog_price_baseline.py`: USDA AMS direct-hog baseline with optional same-report fundamentals
+- `hog_backtest_service.py`: bounded request and JSON payload layer shared by the Worker API and local tools
 - `hog_ui.py`: minimal local web UI for the hog backtest
+- `cf_api_worker.py`: Python Cloudflare Worker entrypoint for the live bounded backtest API
+- `cloudflare/ui-worker/`: UI Worker with static assets, API proxying, and Access token validation
 - `tests/test_rbp.py`: smoke tests for weights, diagnostics, and predictive signal
 - `tests/test_hog_price_baseline.py`: offline tests for the hog data loader and feature builder
 - `tests/test_hog_ui.py`: render-level smoke tests for the UI
+- `tests/test_hog_backtest_service.py`: request validation and API-payload regression tests
 
 ## How the code maps to the paper
 
@@ -44,6 +48,66 @@ python3 hog_price_baseline.py --feature-pack core_fundamentals --max-observation
 python3 hog_ui.py
 python3 -m unittest discover -s tests -v
 ```
+
+## Cloudflare deployment
+
+The deployed app is now split into two Workers:
+
+- `boss-hog-api`: a Python Worker that refreshes USDA data on request, stores the normalized daily dataset in KV, and returns bounded JSON payloads
+- `boss-hog-ui`: a JavaScript Worker that serves the browser app, proxies `/api/*` to the Python Worker through a service binding, and validates Cloudflare Access JWTs on dynamic routes
+
+### Worker layout
+
+- [`wrangler.jsonc`](/Users/adamjones/Development/boss-hog/wrangler.jsonc): Python API Worker config
+- [`pyproject.toml`](/Users/adamjones/Development/boss-hog/pyproject.toml): Python Worker tooling with `workers-py`
+- [`package.json`](/Users/adamjones/Development/boss-hog/package.json): Python Worker deploy scripts
+- [`cloudflare/ui-worker/wrangler.jsonc`](/Users/adamjones/Development/boss-hog/cloudflare/ui-worker/wrangler.jsonc): UI Worker config
+- [`cloudflare/ui-worker/public/app/index.html`](/Users/adamjones/Development/boss-hog/cloudflare/ui-worker/public/app/index.html): static app shell
+
+### Local Cloudflare tooling
+
+```bash
+# Root Python API Worker
+npm install
+uv sync --group dev
+
+# UI Worker
+cd cloudflare/ui-worker
+npm install
+npm test
+```
+
+### Required Cloudflare resources
+
+1. Create a KV namespace for `HOG_DATA_CACHE`.
+2. Replace `REPLACE_WITH_HOG_DATA_CACHE_NAMESPACE_ID` in [`wrangler.jsonc`](/Users/adamjones/Development/boss-hog/wrangler.jsonc).
+3. Deploy the Python API Worker.
+4. Deploy the UI Worker.
+5. Enable Cloudflare Access on the UI Worker hostname.
+6. Configure one-time PIN login.
+7. Create an allow policy for your email address and the second approved user.
+8. Set the UI Worker runtime secrets or vars:
+   - `ACCESS_TEAM_DOMAIN`
+   - `ACCESS_AUD`
+
+### GitHub Actions secrets
+
+The deployment workflows expect:
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+
+### Zero Trust Access
+
+The repository can stay public while the deployed site remains private.
+
+Use Cloudflare Access with:
+
+- the UI Worker hostname
+- one-time PIN login
+- an allow policy limited to your email and the second approved user
+
+The UI Worker also validates `CF-Access-Jwt-Assertion` at runtime on `/` and `/api/*`. That protects the dynamic paths even if the edge-side Access policy is loosened later.
 
 ## Local UI
 
@@ -122,3 +186,4 @@ print(result.top_observations())
 - Zero-threshold linear cells treat asymmetry as `0.0` when there is no censored complement, so their reliability weight does not get an artificial boost.
 - The first exogenous-feature pack intentionally stays inside the same USDA AMS direct-hog report so the common history stays long and the diagnostics stay readable.
 - Pork cutout and primal-value features from USDA AMS report `2498` are deferred for now because they materially shorten the common history relative to the direct-hog report.
+- The Cloudflare deployment is private-by-default: the public repo can remain open while the site itself stays behind Cloudflare Access.

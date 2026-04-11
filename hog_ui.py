@@ -6,6 +6,7 @@ from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from hog_backtest_service import BacktestRequest, run_request_against_monthly_series
 from hog_price_baseline import (
     CORE_FUNDAMENTALS_FEATURE_PACK,
     DEFAULT_CACHE_PATH,
@@ -15,7 +16,6 @@ from hog_price_baseline import (
     aggregate_monthly_average,
     download_direct_hog_history,
     load_cached_daily_series,
-    run_monthly_backtest,
 )
 
 
@@ -45,16 +45,17 @@ def run_ui_backtest(state: UIState) -> BacktestSummary:
     csv_path = download_direct_hog_history(DEFAULT_CACHE_PATH, purchase_type=DEFAULT_PURCHASE_TYPE, force=state.force_download)
     daily_series = load_cached_daily_series(csv_path)
     monthly_series = aggregate_monthly_average(daily_series)
-    if state.max_observations:
-        monthly_series = monthly_series[-state.max_observations :]
-    return run_monthly_backtest(
+    return run_request_against_monthly_series(
         monthly_series,
+        BacktestRequest(
+            feature_pack=state.feature_pack,
+            max_observations=state.max_observations,
+            initial_window=state.initial_window,
+            random_cells=state.random_cells,
+            seed=state.seed,
+        ),
         series_name=DEFAULT_PURCHASE_TYPE,
-        source_path=csv_path,
-        initial_window=state.initial_window,
-        random_cells=state.random_cells,
-        seed=state.seed,
-        feature_pack=state.feature_pack,
+        source_path=str(csv_path),
     )
 
 

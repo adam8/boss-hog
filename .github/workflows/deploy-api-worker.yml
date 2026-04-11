@@ -1,0 +1,41 @@
+name: Deploy API Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "cf_api_worker.py"
+      - "hog_backtest_service.py"
+      - "hog_price_baseline.py"
+      - "rbp.py"
+      - "wrangler.jsonc"
+      - "pyproject.toml"
+      - "package.json"
+      - "tests/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install uv
+        run: python3 -m pip install uv
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Install Python Worker dependencies
+        run: uv sync --group dev
+      - name: Run Python test suite
+        run: python3 -m unittest discover -s tests -v
+      - name: Deploy Python API Worker
+        run: npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -1,0 +1,30 @@
+name: Deploy UI Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "cloudflare/ui-worker/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install UI worker dependencies
+        working-directory: cloudflare/ui-worker
+        run: npm ci
+      - name: Run UI worker tests
+        working-directory: cloudflare/ui-worker
+        run: npm test
+      - name: Deploy UI Worker
+        working-directory: cloudflare/ui-worker
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

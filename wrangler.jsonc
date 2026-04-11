@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "boss-hog-api",
+  "main": "cf_api_worker.py",
+  "compatibility_date": "2026-04-11",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "workers_dev": false,
+  "kv_namespaces": [
+    {
+      "binding": "HOG_DATA_CACHE",
+      "id": "15d454c781eb44bda2003c57e52b7999"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

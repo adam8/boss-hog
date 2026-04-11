@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Boss Hog RBP Explorer</title>
+    <link rel="stylesheet" href="/app/styles.css">
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <p class="eyebrow">Boss Hog</p>
+        <h1>Private RBP Hog Explorer</h1>
+        <p class="hero-copy">
+          Run the current USDA-backed monthly hog backtest in the browser. The UI stays simple on purpose:
+          bounded controls, clear metrics, and detail panels that explain what the numbers mean.
+        </p>
+      </header>
+
+      <main class="layout">
+        <section class="panel controls">
+          <form id="controls-form">
+            <div class="panel-heading">
+              <h2>Controls</h2>
+            </div>
+
+            <label>
+              <span class="label-row">Feature Pack <button class="info-button" type="button" data-info="feature-pack">i</button></span>
+              <select name="feature_pack">
+                <option value="price_only">price_only</option>
+                <option value="core_fundamentals">core_fundamentals</option>
+              </select>
+            </label>
+            <div class="info-panel" id="feature-pack" hidden>
+              <p><code>price_only</code> uses only price-derived features. <code>core_fundamentals</code> adds the same-report hog fundamentals.</p>
+            </div>
+
+            <label>
+              <span class="label-row">Max Observations <button class="info-button" type="button" data-info="max-observations">i</button></span>
+              <input name="max_observations" type="number" min="120" max="300" value="240">
+            </label>
+            <div class="info-panel" id="max-observations" hidden>
+              <p>How many recent monthly observations to keep before building the supervised dataset.</p>
+            </div>
+
+            <label>
+              <span class="label-row">Initial Window <button class="info-button" type="button" data-info="initial-window">i</button></span>
+              <input name="initial_window" type="number" min="60" max="180" value="120">
+            </label>
+            <div class="info-panel" id="initial-window" hidden>
+              <p>How many supervised rows are used before the first out-of-sample prediction.</p>
+            </div>
+
+            <label>
+              <span class="label-row">Random Cells <button class="info-button" type="button" data-info="random-cells">i</button></span>
+              <input name="random_cells" type="number" min="10" max="40" value="20">
+            </label>
+            <div class="info-panel" id="random-cells" hidden>
+              <p>How many additional sparse-grid cells RBP samples in each fit.</p>
+            </div>
+
+            <label>
+              <span class="label-row">Seed <button class="info-button" type="button" data-info="seed">i</button></span>
+              <input name="seed" type="number" min="0" max="9999" value="11">
+            </label>
+            <div class="info-panel" id="seed" hidden>
+              <p>The sparse-grid sampler seed. Keep it fixed when you want comparable runs.</p>
+            </div>
+
+            <button class="run-button" type="submit">Run Backtest</button>
+          </form>
+        </section>
+
+        <section class="results">
+          <section class="status-bar" id="status-bar" aria-live="polite">Loading default backtest...</section>
+          <section class="error-banner" id="error-banner" hidden></section>
+          <section id="results-root"></section>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/app/app.js"></script>
+  </body>
+</html>

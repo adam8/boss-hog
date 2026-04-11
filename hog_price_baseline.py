@@ -4,6 +4,7 @@ import argparse
 import csv
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from io import StringIO
 import json
 import math
 from pathlib import Path
@@ -117,6 +118,30 @@ def download_direct_hog_history(
     if cache_path.exists() and not force:
         return cache_path
 
+    observations = fetch_direct_hog_history(
+        purchase_type=purchase_type,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    write_cached_daily_series(cache_path, observations)
+    return cache_path
+
+
+def load_cached_daily_series(path: Path) -> list[HogObservation]:
+    return deserialize_cached_daily_series(path.read_text(encoding="utf-8"), source=str(path))
+
+
+def write_cached_daily_series(path: Path, series: Sequence[HogObservation]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(serialize_cached_daily_series(series), encoding="utf-8")
+
+
+def fetch_direct_hog_history(
+    *,
+    purchase_type: str = DEFAULT_PURCHASE_TYPE,
+    start_date: date = DEFAULT_START_DATE,
+    end_date: date | None = None,
+) -> list[HogObservation]:
     final_date = date.today() if end_date is None else end_date
     if start_date > final_date:
         raise ValueError("start_date must be on or before end_date.")
@@ -133,59 +158,60 @@ def download_direct_hog_history(
     if not observed_rows:
         raise ValueError(f"No direct hog prices found for purchase type {purchase_type!r}.")
 
-    with cache_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(["schema_version", "date", *CACHE_NUMERIC_FIELDS])
-        for point_date in sorted(observed_rows):
-            observation = observed_rows[point_date]
-            writer.writerow(
-                [
-                    CACHE_SCHEMA_VERSION,
-                    observation.date,
-                    *[_format_optional_float(getattr(observation, field_name)) for field_name in CACHE_NUMERIC_FIELDS],
-                ]
+    return [observed_rows[point_date] for point_date in sorted(observed_rows)]
+
+
+def serialize_cached_daily_series(series: Sequence[HogObservation]) -> str:
+    handle = StringIO()
+    writer = csv.writer(handle)
+    writer.writerow(["schema_version", "date", *CACHE_NUMERIC_FIELDS])
+    for observation in sorted(series, key=lambda point: point.date):
+        writer.writerow(
+            [
+                CACHE_SCHEMA_VERSION,
+                observation.date,
+                *[_format_optional_float(getattr(observation, field_name)) for field_name in CACHE_NUMERIC_FIELDS],
+            ]
+        )
+    return handle.getvalue()
+
+
+def deserialize_cached_daily_series(payload: str, *, source: str = "<memory>") -> list[HogObservation]:
+    reader = csv.DictReader(StringIO(payload))
+    if reader.fieldnames is None:
+        raise ValueError(f"Missing CSV header in {source}.")
+
+    expected_columns = {"schema_version", "date", *CACHE_NUMERIC_FIELDS}
+    missing_columns = expected_columns.difference(reader.fieldnames)
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise ValueError(f"Missing required cache columns in {source}: {missing}.")
+
+    series: list[HogObservation] = []
+    for row in reader:
+        if row["schema_version"] != CACHE_SCHEMA_VERSION:
+            raise ValueError(
+                f"Unsupported cache schema version {row['schema_version']!r} in {source}; "
+                f"expected {CACHE_SCHEMA_VERSION!r}."
             )
-
-    return cache_path
-
-
-def load_cached_daily_series(path: Path) -> list[HogObservation]:
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        if reader.fieldnames is None:
-            raise ValueError(f"Missing CSV header in {path}.")
-
-        expected_columns = {"schema_version", "date", *CACHE_NUMERIC_FIELDS}
-        missing_columns = expected_columns.difference(reader.fieldnames)
-        if missing_columns:
-            missing = ", ".join(sorted(missing_columns))
-            raise ValueError(f"Missing required cache columns in {path}: {missing}.")
-
-        series: list[HogObservation] = []
-        for row in reader:
-            if row["schema_version"] != CACHE_SCHEMA_VERSION:
-                raise ValueError(
-                    f"Unsupported cache schema version {row['schema_version']!r} in {path}; "
-                    f"expected {CACHE_SCHEMA_VERSION!r}."
-                )
-            if not row["date"]:
-                continue
-            series.append(
-                HogObservation(
-                    date=row["date"],
-                    avg_net_price=_parse_optional_float(row["avg_net_price"]),
-                    head_count=_parse_optional_float(row["head_count"]),
-                    avg_live_weight=_parse_optional_float(row["avg_live_weight"]),
-                    avg_carcass_weight=_parse_optional_float(row["avg_carcass_weight"]),
-                    avg_sort_loss=_parse_optional_float(row["avg_sort_loss"]),
-                    avg_backfat=_parse_optional_float(row["avg_backfat"]),
-                    avg_loin_depth=_parse_optional_float(row["avg_loin_depth"]),
-                    avg_lean_percent=_parse_optional_float(row["avg_lean_percent"]),
-                )
+        if not row["date"]:
+            continue
+        series.append(
+            HogObservation(
+                date=row["date"],
+                avg_net_price=_parse_optional_float(row["avg_net_price"]),
+                head_count=_parse_optional_float(row["head_count"]),
+                avg_live_weight=_parse_optional_float(row["avg_live_weight"]),
+                avg_carcass_weight=_parse_optional_float(row["avg_carcass_weight"]),
+                avg_sort_loss=_parse_optional_float(row["avg_sort_loss"]),
+                avg_backfat=_parse_optional_float(row["avg_backfat"]),
+                avg_loin_depth=_parse_optional_float(row["avg_loin_depth"]),
+                avg_lean_percent=_parse_optional_float(row["avg_lean_percent"]),
             )
+        )
 
     if not series:
-        raise ValueError(f"No cached direct hog rows found in {path}.")
+        raise ValueError(f"No cached direct hog rows found in {source}.")
     return sorted(series, key=lambda point: point.date)
 
 

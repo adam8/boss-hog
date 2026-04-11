@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Run Python test suite
+        run: python3 -m unittest discover -s tests -v
+
+  ui-worker-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install UI worker dependencies
+        working-directory: cloudflare/ui-worker
+        run: npm ci
+      - name: Run UI worker tests
+        working-directory: cloudflare/ui-worker
+        run: npm test
