@@ -4,3 +4,5 @@ data/
 node_modules/
 .venv/
 cloudflare/ui-worker/node_modules/
+.wrangler-build/
+cloudflare/ui-worker/.wrangler-build/

@@ -14,7 +14,7 @@ The goal here is clarity, not speed. The implementation uses only the Python sta
 - `hog_backtest_service.py`: bounded request and JSON payload layer shared by the Worker API and local tools
 - `hog_ui.py`: minimal local web UI for the hog backtest
 - `cf_api_worker.py`: Python Cloudflare Worker entrypoint for the live bounded backtest API
-- `cloudflare/ui-worker/`: UI Worker with static assets, API proxying, and Access token validation
+- `cloudflare/ui-worker/`: UI Worker with browser app source, generated bundled assets, API proxying, and Access token validation
 - `tests/test_rbp.py`: smoke tests for weights, diagnostics, and predictive signal
 - `tests/test_hog_price_baseline.py`: offline tests for the hog data loader and feature builder
 - `tests/test_hog_ui.py`: render-level smoke tests for the UI
@@ -54,7 +54,7 @@ python3 -m unittest discover -s tests -v
 The deployed app is now split into two Workers:
 
 - `boss-hog-api`: a Python Worker that refreshes USDA data on request, stores the normalized daily dataset in KV, and returns bounded JSON payloads
-- `boss-hog-ui`: a JavaScript Worker that serves the browser app, proxies `/api/*` to the Python Worker through a service binding, and validates Cloudflare Access JWTs on dynamic routes
+- `boss-hog-ui`: a JavaScript Worker that serves the browser app directly from the Worker bundle, proxies `/api/*` to the Python Worker through a service binding, and validates Cloudflare Access JWTs on browser and API routes
 
 ### Worker layout
 
@@ -62,7 +62,9 @@ The deployed app is now split into two Workers:
 - [`pyproject.toml`](/Users/adamjones/Development/boss-hog/pyproject.toml): Python Worker tooling with `workers-py`
 - [`package.json`](/Users/adamjones/Development/boss-hog/package.json): Python Worker deploy scripts
 - [`cloudflare/ui-worker/wrangler.jsonc`](/Users/adamjones/Development/boss-hog/cloudflare/ui-worker/wrangler.jsonc): UI Worker config
-- [`cloudflare/ui-worker/public/app/index.html`](/Users/adamjones/Development/boss-hog/cloudflare/ui-worker/public/app/index.html): static app shell
+- [`cloudflare/ui-worker/public/app/index.html`](/Users/adamjones/Development/boss-hog/cloudflare/ui-worker/public/app/index.html): authored app shell
+- [`cloudflare/ui-worker/scripts/generate-site-module.mjs`](/Users/adamjones/Development/boss-hog/cloudflare/ui-worker/scripts/generate-site-module.mjs): bundles the browser assets into the Worker source
+- [`cloudflare/ui-worker/src/site.generated.js`](/Users/adamjones/Development/boss-hog/cloudflare/ui-worker/src/site.generated.js): generated browser asset module committed for deploys
 
 ### Local Cloudflare tooling
 
@@ -74,6 +76,7 @@ uv sync --group dev
 # UI Worker
 cd cloudflare/ui-worker
 npm install
+npm run generate:site
 npm test
 ```
 
@@ -83,10 +86,11 @@ npm test
 2. Replace `REPLACE_WITH_HOG_DATA_CACHE_NAMESPACE_ID` in [`wrangler.jsonc`](/Users/adamjones/Development/boss-hog/wrangler.jsonc).
 3. Deploy the Python API Worker.
 4. Deploy the UI Worker.
-5. Enable Cloudflare Access on the UI Worker hostname.
-6. Configure one-time PIN login.
-7. Create an allow policy for your email address and the second approved user.
-8. Set the UI Worker runtime secrets or vars:
+5. Enable the `workers.dev` hostname for the UI Worker.
+6. In Zero Trust, create a self-hosted Access application for the UI Worker hostname.
+7. Configure one-time PIN login.
+8. Create an allow policy for your email address and the second approved user.
+9. Set the UI Worker runtime secrets or vars:
    - `ACCESS_TEAM_DOMAIN`
    - `ACCESS_AUD`
 
@@ -108,6 +112,8 @@ Use Cloudflare Access with:
 - an allow policy limited to your email and the second approved user
 
 The UI Worker also validates `CF-Access-Jwt-Assertion` at runtime on `/` and `/api/*`. That protects the dynamic paths even if the edge-side Access policy is loosened later.
+
+The Access application and policy still have to be created in Cloudflare Zero Trust. The Worker-side JWT validation does not replace the Access app itself; it hardens the site after the Access app is in place.
 
 ## Local UI
 

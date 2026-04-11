@@ -3,8 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "generate:site": "node ./scripts/generate-site-module.mjs",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
+    "predeploy": "npm run generate:site",
+    "pretest": "npm run generate:site",
     "test": "vitest run"
   },
   "devDependencies": {
