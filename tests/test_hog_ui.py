@@ -5,7 +5,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from hog_price_baseline import HogObservation
-from hog_ui import APP_ASSET_DIR, DEFAULT_PURCHASE_TYPE, resolve_asset, run_local_backtest
+from hog_ui import APP_ASSET_DIR, DEFAULT_PURCHASE_TYPE, LOGO_PATH, resolve_asset, run_local_backtest
 
 
 class HogUITests(TestCase):
@@ -17,7 +17,7 @@ class HogUITests(TestCase):
         self.assertIsNotNone(logo_asset)
         self.assertEqual(index_asset[0], APP_ASSET_DIR / "index.html")
         self.assertEqual(index_asset[1], "text/html; charset=utf-8")
-        self.assertEqual(logo_asset[0], Path("/Users/adamjones/Development/boss-hog/boss-hog-logo.png"))
+        self.assertEqual(logo_asset[0], LOGO_PATH)
         self.assertEqual(logo_asset[1], "image/png")
 
     def test_run_local_backtest_uses_shared_payload_builder(self) -> None:
