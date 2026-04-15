@@ -151,11 +151,33 @@ select,
   border: 1px dashed var(--line);
   color: var(--muted);
   background: rgba(239, 224, 216, 0.5);
+  font-size: 0.83rem;
 }
 
 .info-panel p {
   margin: 0;
   line-height: 1.5;
+}
+
+.info-summary + .more-button {
+  margin-top: 8px;
+}
+
+.more-button {
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.info-more {
+  margin-top: 8px;
 }
 
 .results {

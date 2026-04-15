@@ -109,7 +109,31 @@ export function wireInfoButtons(root) {
       if (!panel) {
         return;
       }
-      panel.hidden = !panel.hidden;
+      const isOpen = !panel.hidden;
+      panel.hidden = isOpen;
+      if (isOpen) {
+        for (const moreButton of panel.querySelectorAll("[data-more-target]")) {
+          const morePanel = root.getElementById(moreButton.dataset.moreTarget);
+          if (morePanel) {
+            morePanel.hidden = true;
+          }
+          moreButton.textContent = "More";
+          moreButton.setAttribute("aria-expanded", "false");
+        }
+      }
+    });
+  }
+
+  for (const button of root.querySelectorAll("[data-more-target]")) {
+    button.addEventListener("click", () => {
+      const panel = root.getElementById(button.dataset.moreTarget);
+      if (!panel) {
+        return;
+      }
+      const willOpen = panel.hidden;
+      panel.hidden = !willOpen;
+      button.textContent = willOpen ? "Less" : "More";
+      button.setAttribute("aria-expanded", willOpen ? "true" : "false");
     });
   }
 }

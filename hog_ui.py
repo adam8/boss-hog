@@ -69,22 +69,22 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
           <article class="metric-card">
             <div class="metric-label">Prediction / Actual Correlation {_info_button("corr-info")}</div>
             <div class="metric-value">{summary.correlation:.3f}</div>
-            {_info_panel("corr-info", "Correlation between predicted and realized next-month log returns over the out-of-sample window.")}
+            {_info_panel("corr-info", "Correlation between predicted and realized next-month log returns over the out-of-sample window.", "In simple terms, this asks whether the model tended to move in the same direction as reality over time. A higher positive value means the forecasts tracked the actual pattern better, while a value near zero means they were not lining up much at all.")}
           </article>
           <article class="metric-card">
             <div class="metric-label">Directional Accuracy {_info_button("direction-info")}</div>
             <div class="metric-value">{summary.directional_accuracy:.3f}</div>
-            {_info_panel("direction-info", "Share of out-of-sample months where the sign of the predicted move matched the sign of the realized move.")}
+            {_info_panel("direction-info", "Share of out-of-sample months where the sign of the predicted move matched the sign of the realized move.", "This ignores the exact size of the forecast and asks a simpler yes-or-no question: did the model get up versus down right? It is useful when direction matters more than perfect magnitude.")}
           </article>
           <article class="metric-card">
             <div class="metric-label">Average Ex-Ante Fit {_info_button("fit-info")}</div>
             <div class="metric-value">{summary.average_fit:.3f}</div>
-            {_info_panel("fit-info", "RBP's internal reliability score averaged across the rolling predictions. Higher is better, but it is not the same thing as realized forecast accuracy.")}
+            {_info_panel("fit-info", "RBP's internal reliability score averaged across the rolling predictions. Higher is better, but it is not the same thing as realized forecast accuracy.", "This is the model's own estimate of how trustworthy each prediction looked before the future happened. It is useful as a confidence signal, but a confident forecast can still turn out wrong.")}
           </article>
           <article class="metric-card">
             <div class="metric-label">Feature Pack {_info_button("pack-info")}</div>
             <div class="metric-value metric-value--small">{escape(summary.feature_pack)}</div>
-            {_info_panel("pack-info", "The set of inputs included in each monthly RBP feature row. `price_only` uses only price-derived signals; `core_fundamentals` also adds same-report hog fundamentals.")}
+            {_info_panel("pack-info", "The set of inputs included in each monthly RBP feature row. `price_only` uses only price-derived signals; `core_fundamentals` also adds same-report hog fundamentals.", "This setting changes what the model is allowed to consider when it searches for relevant past months. The broader pack adds more economic context from the same USDA report, not a different model.")}
           </article>
         </section>
 
@@ -93,7 +93,7 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
             <h2>Final Out-of-Sample Month</h2>
             {_info_button("final-info")}
           </div>
-          {_info_panel("final-info", "The most recent backtest month in the selected window. The prediction was produced using only prior months in the rolling training sample. Returns are log returns, and prices are monthly averages.")}
+          {_info_panel("final-info", "The most recent backtest month in the selected window. The prediction was produced using only prior months in the rolling training sample. Returns are log returns, and prices are monthly averages.", "This is the cleanest single example of how the model behaved. It shows what the system would have predicted at that point in time using only older data, then compares it with what actually happened next.")}
           <div class="detail-grid">
             <div><span>Predicted Month</span><strong>{escape(summary.prediction_dates[last_index])}</strong></div>
             <div><span>Predicted Next-Month Log Return</span><strong>{summary.predictions[last_index]:.4f}</strong></div>
@@ -110,7 +110,7 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
             <h2>Average Feature Importance</h2>
             {_info_button("importance-info")}
           </div>
-          {_info_panel("importance-info", "Average variable importance across the rolling predictions. Higher values mean the feature tended to improve adjusted fit more often across the sampled RBP cells.")}
+          {_info_panel("importance-info", "Average variable importance across the rolling predictions. Higher values mean the feature tended to improve adjusted fit more often across the sampled RBP cells.", "In simple terms, this is a ranking of which inputs were most useful to the model across the whole backtest. It does not mean the feature always pushed price up or down; it means it helped the model identify relevant history more often.")}
           {_importance_list(summary.average_variable_importance)}
         </section>
         """
@@ -121,7 +121,7 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
                 <h2>Average Exogenous Importance</h2>
                 {_info_button("exo-info")}
               </div>
-              {_info_panel("exo-info", "The same averaged importance view, filtered to the extra same-report hog fundamentals only.")}
+              {_info_panel("exo-info", "The same averaged importance view, filtered to the extra same-report hog fundamentals only.", "This helps separate the non-price hog-market signals from the pure price signals. It is a quick way to see whether the extra USDA fundamentals are actually contributing anything useful.")}
               {_importance_list(summary.average_exogenous_variable_importance)}
             </section>
             """
@@ -317,10 +317,37 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
         border-radius: 12px;
         background: #f7efe9;
         color: var(--muted);
+        font-size: 0.83rem;
         line-height: 1.55;
       }}
 
       .info-panel.open {{
+        display: block;
+      }}
+
+      .info-summary + .more-button {{
+        margin-top: 8px;
+      }}
+
+      .more-button {{
+        border: 0;
+        background: transparent;
+        color: var(--accent-strong);
+        font: inherit;
+        font-size: 0.8rem;
+        font-weight: 700;
+        padding: 0;
+        cursor: pointer;
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }}
+
+      .info-more {{
+        display: none;
+        margin-top: 8px;
+      }}
+
+      .info-more.open {{
         display: block;
       }}
 
@@ -450,7 +477,7 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
             <h2>Controls</h2>
             {_info_button("controls-info")}
           </div>
-          {_info_panel("controls-info", "These settings drive the monthly backtest shown on the right. The UI uses the same AMS data and RBP code as the command-line script.")}
+          {_info_panel("controls-info", "These settings drive the monthly backtest shown on the right. The UI uses the same AMS data and RBP code as the command-line script.", "In simple terms, the left side decides how much history and how much model complexity you want to use. The right side shows how that setup would have performed on historical monthly hog data.")}
           <form method="get">
             <label>
               <span class="label-row">Feature Pack {_info_button("feature-pack-info")}</span>
@@ -458,31 +485,31 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
                 {_option(PRICE_ONLY_FEATURE_PACK, state.feature_pack)}
                 {_option(CORE_FUNDAMENTALS_FEATURE_PACK, state.feature_pack)}
               </select>
-              {_info_panel("feature-pack-info", "`price_only` uses only price-derived features. `core_fundamentals` adds the same-report hog fundamentals such as head count, live weight, carcass weight, and lean percent.")}
+              {_info_panel("feature-pack-info", "`price_only` uses only price-derived features. `core_fundamentals` adds the same-report hog fundamentals such as head count, live weight, carcass weight, and lean percent.", "This is the main choice between a pure market-history view and a richer market-context view. The second option lets RBP treat months as similar not only because prices looked alike, but also because the hog fundamentals looked alike.")}
             </label>
 
             <label>
               <span class="label-row">Monthly Observations {_info_button("observations-info")}</span>
               <input type="number" min="14" name="max_observations" value="{state.max_observations}">
-              {_info_panel("observations-info", "How many of the most recent monthly observations to keep before building the supervised dataset. Lower values run faster; higher values use more history.")}
+              {_info_panel("observations-info", "How many of the most recent monthly observations to keep before building the supervised dataset. Lower values run faster; higher values use more history.", "This decides how far back the experiment looks. More history can help if old regimes are still relevant, but too much history can also mix together market periods that no longer look much like the current one.")}
             </label>
 
             <label>
               <span class="label-row">Initial Window {_info_button("window-info")}</span>
               <input type="number" min="2" name="initial_window" value="{state.initial_window}">
-              {_info_panel("window-info", "How many supervised rows RBP sees before making the first out-of-sample prediction. This controls how much history is in each rolling fit.")}
+              {_info_panel("window-info", "How many supervised rows RBP sees before making the first out-of-sample prediction. This controls how much history is in each rolling fit.", "Think of this as the starting training sample. If it is too small, the earliest forecasts are based on thin evidence; if it is larger, the model starts with more context before the rolling test begins.")}
             </label>
 
             <label>
               <span class="label-row">Random Cells {_info_button("cells-info")}</span>
               <input type="number" min="1" name="random_cells" value="{state.random_cells}">
-              {_info_panel("cells-info", "How many extra sparse-grid cells RBP samples on top of its base cells. More cells can capture more structure, but they increase run time.")}
+              {_info_panel("cells-info", "How many extra sparse-grid cells RBP samples on top of its base cells. More cells can capture more structure, but they increase run time.", "RBP does not rely on one single formula. It checks many small model views, then combines them. This setting increases how many of those extra views it explores.")}
             </label>
 
             <label>
               <span class="label-row">Seed {_info_button("seed-info")}</span>
               <input type="number" min="0" name="seed" value="{state.seed}">
-              {_info_panel("seed-info", "Controls the random sparse-grid sampling so runs are repeatable.")}
+              {_info_panel("seed-info", "Controls the random sparse-grid sampling so runs are repeatable.", "Use the same seed when you want a fair apples-to-apples comparison across two runs. Change it only if you intentionally want to see a different random sample of model cells.")}
             </label>
 
             <label class="checkbox-row">
@@ -513,6 +540,24 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
           const panel = document.getElementById(targetId);
           if (!panel) return;
           const isOpen = panel.classList.toggle("open");
+          button.setAttribute("aria-expanded", isOpen ? "true" : "false");
+          if (!isOpen) {{
+            panel.querySelectorAll(".info-more").forEach((morePanel) => morePanel.classList.remove("open"));
+            panel.querySelectorAll(".more-button").forEach((moreButton) => {{
+              moreButton.textContent = "More";
+              moreButton.setAttribute("aria-expanded", "false");
+            }});
+          }}
+        }});
+      }});
+
+      document.querySelectorAll(".more-button").forEach((button) => {{
+        button.addEventListener("click", () => {{
+          const targetId = button.getAttribute("data-more-target");
+          const panel = document.getElementById(targetId);
+          if (!panel) return;
+          const isOpen = panel.classList.toggle("open");
+          button.textContent = isOpen ? "Less" : "More";
           button.setAttribute("aria-expanded", isOpen ? "true" : "false");
         }});
       }});
@@ -592,8 +637,23 @@ def _info_button(target_id: str) -> str:
     )
 
 
-def _info_panel(panel_id: str, body: str) -> str:
-    return f'<div class="info-panel" id="{escape(panel_id)}">{escape(body)}</div>'
+def _info_panel(panel_id: str, body: str, more_body: str | None = None) -> str:
+    more_button = ""
+    more_panel = ""
+    if more_body:
+        more_id = f"{panel_id}-more"
+        more_button = (
+            f'<button class="more-button" type="button" data-more-target="{escape(more_id)}" '
+            f'aria-expanded="false">More</button>'
+        )
+        more_panel = f'<div class="info-more" id="{escape(more_id)}">{escape(more_body)}</div>'
+    return (
+        f'<div class="info-panel" id="{escape(panel_id)}">'
+        f'<div class="info-summary">{escape(body)}</div>'
+        f"{more_button}"
+        f"{more_panel}"
+        "</div>"
+    )
 
 
 def _importance_list(importances: dict[str, float], *, count: int = 7) -> str:

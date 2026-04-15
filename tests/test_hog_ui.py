@@ -40,6 +40,7 @@ class HogUITests(unittest.TestCase):
 
         self.assertIn("Monthly RBP Hog Explorer", html)
         self.assertIn("info-button", html)
+        self.assertIn("more-button", html)
         self.assertIn("Feature Pack", html)
         self.assertIn("price_only", html)
         self.assertIn("Average Feature Importance", html)

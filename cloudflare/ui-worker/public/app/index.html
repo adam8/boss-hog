@@ -32,7 +32,11 @@
               </select>
             </label>
             <div class="info-panel" id="feature-pack" hidden>
-              <p><code>price_only</code> uses only price-derived features. <code>core_fundamentals</code> adds the same-report hog fundamentals.</p>
+              <p class="info-summary"><code>price_only</code> uses only price-derived features. <code>core_fundamentals</code> adds the same-report hog fundamentals.</p>
+              <button class="more-button" type="button" data-more-target="feature-pack-more" aria-expanded="false">More</button>
+              <div class="info-more" id="feature-pack-more" hidden>
+                <p>In simple terms, this setting decides whether the model looks only at price behavior or also at the physical hog-market details in the same USDA report. The deeper pack gives RBP more context for deciding which past months were truly similar.</p>
+              </div>
             </div>
 
             <label>
@@ -40,7 +44,11 @@
               <input name="max_observations" type="number" min="120" max="300" value="240">
             </label>
             <div class="info-panel" id="max-observations" hidden>
-              <p>How many recent monthly observations to keep before building the supervised dataset.</p>
+              <p class="info-summary">How many recent monthly observations to keep before building the supervised dataset.</p>
+              <button class="more-button" type="button" data-more-target="max-observations-more" aria-expanded="false">More</button>
+              <div class="info-more" id="max-observations-more" hidden>
+                <p>This is the amount of history you let the backtest use. A larger number gives the model more past months to learn from, while a smaller number focuses it on the more recent market regime.</p>
+              </div>
             </div>
 
             <label>
@@ -48,7 +56,11 @@
               <input name="initial_window" type="number" min="60" max="180" value="120">
             </label>
             <div class="info-panel" id="initial-window" hidden>
-              <p>How many supervised rows are used before the first out-of-sample prediction.</p>
+              <p class="info-summary">How many supervised rows are used before the first out-of-sample prediction.</p>
+              <button class="more-button" type="button" data-more-target="initial-window-more" aria-expanded="false">More</button>
+              <div class="info-more" id="initial-window-more" hidden>
+                <p>Think of this as the minimum amount of history the model needs before it starts making realistic test predictions. A bigger starting window usually means the early predictions are based on a fuller training sample.</p>
+              </div>
             </div>
 
             <label>
@@ -56,7 +68,11 @@
               <input name="random_cells" type="number" min="10" max="40" value="20">
             </label>
             <div class="info-panel" id="random-cells" hidden>
-              <p>How many additional sparse-grid cells RBP samples in each fit.</p>
+              <p class="info-summary">How many additional sparse-grid cells RBP samples in each fit.</p>
+              <button class="more-button" type="button" data-more-target="random-cells-more" aria-expanded="false">More</button>
+              <div class="info-more" id="random-cells-more" hidden>
+                <p>RBP tries many small views of the data rather than one fixed equation. More random cells means it explores more combinations of variables and thresholds, which can help it catch structure but also takes longer to run.</p>
+              </div>
             </div>
 
             <label>
@@ -64,7 +80,11 @@
               <input name="seed" type="number" min="0" max="9999" value="11">
             </label>
             <div class="info-panel" id="seed" hidden>
-              <p>The sparse-grid sampler seed. Keep it fixed when you want comparable runs.</p>
+              <p class="info-summary">The sparse-grid sampler seed. Keep it fixed when you want comparable runs.</p>
+              <button class="more-button" type="button" data-more-target="seed-more" aria-expanded="false">More</button>
+              <div class="info-more" id="seed-more" hidden>
+                <p>The seed keeps the randomized parts of the RBP search repeatable. If you rerun with the same seed and same settings, you should get the same result instead of a slightly different sample of model cells.</p>
+              </div>
             </div>
 
             <button class="run-button" type="submit">Run Backtest</button>

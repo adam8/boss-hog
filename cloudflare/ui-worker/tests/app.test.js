@@ -10,7 +10,10 @@ function makeDom() {
         <body>
           <form id="controls-form">
             <button class="info-button" type="button" data-info="panel-a">i</button>
-            <div id="panel-a" hidden></div>
+            <div id="panel-a" hidden>
+              <button class="more-button" type="button" data-more-target="panel-a-more" aria-expanded="false">More</button>
+              <div id="panel-a-more" hidden>Deeper panel text</div>
+            </div>
             <select name="feature_pack"><option value="price_only" selected>price_only</option></select>
             <input name="max_observations" value="240">
             <input name="initial_window" value="120">
@@ -65,6 +68,32 @@ describe("app ui", () => {
     expect(html).toContain("Final Out-of-Sample Month");
     expect(html).toContain("Average Exogenous Importance");
     expect(html).toContain("loin_depth_avg");
+  });
+
+  it("toggles the deeper info text with the more button", async () => {
+    const dom = makeDom();
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => payload,
+    }));
+    await boot(dom.window.document, fetchMock);
+
+    const infoButton = dom.window.document.querySelector("[data-info='panel-a']");
+    const panel = dom.window.document.getElementById("panel-a");
+    const moreButton = dom.window.document.querySelector("[data-more-target='panel-a-more']");
+    const morePanel = dom.window.document.getElementById("panel-a-more");
+
+    infoButton.click();
+    expect(panel.hidden).toBe(false);
+
+    moreButton.click();
+    expect(morePanel.hidden).toBe(false);
+    expect(moreButton.textContent).toBe("Less");
+
+    infoButton.click();
+    expect(panel.hidden).toBe(true);
+    expect(morePanel.hidden).toBe(true);
+    expect(moreButton.textContent).toBe("More");
   });
 
   it("boots and renders data from the API", async () => {
