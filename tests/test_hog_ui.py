@@ -39,6 +39,8 @@ class HogUITests(unittest.TestCase):
         html = render_page(UIState(), summary=summary, error=None)
 
         self.assertIn("Monthly RBP Hog Explorer", html)
+        self.assertIn('src="/app/logo.png"', html)
+        self.assertIn("Boss Hog logo", html)
         self.assertIn("info-button", html)
         self.assertIn("more-button", html)
         self.assertIn("Feature Pack", html)

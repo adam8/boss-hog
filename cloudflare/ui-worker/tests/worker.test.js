@@ -19,7 +19,9 @@ describe("ui worker", () => {
     const response = await worker.fetch(new Request("https://example.com/"), env);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/html");
-    expect(await response.text()).toContain("Private RBP Hog Explorer");
+    const body = await response.text();
+    expect(body).toContain("Private RBP Hog Explorer");
+    expect(body).toContain("/app/logo.png");
   });
 
   it("serves the browser assets from the worker bundle", async () => {
@@ -27,6 +29,13 @@ describe("ui worker", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/javascript");
     expect(await response.text()).toContain("runBacktest");
+  });
+
+  it("serves the logo asset from the worker bundle", async () => {
+    const response = await worker.fetch(new Request("https://example.com/app/logo.png"), env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("image/png");
+    expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(0);
   });
 
   it("proxies API requests through the service binding", async () => {

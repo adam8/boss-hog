@@ -40,6 +40,24 @@ code {
   margin-bottom: 28px;
 }
 
+.hero-brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.hero-heading {
+  display: grid;
+  gap: 8px;
+}
+
+.hero-logo {
+  width: clamp(58px, 8vw, 84px);
+  height: auto;
+  flex: none;
+  filter: drop-shadow(0 10px 20px rgba(69, 47, 27, 0.18));
+}
+
 .eyebrow {
   margin: 0;
   color: var(--accent);
@@ -286,5 +304,14 @@ select,
 
   .controls {
     position: static;
+  }
+
+  .hero-brand {
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .hero-logo {
+    width: 56px;
   }
 }

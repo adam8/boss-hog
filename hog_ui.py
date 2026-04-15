@@ -4,6 +4,7 @@ import argparse
 from dataclasses import dataclass
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from hog_backtest_service import BacktestRequest, run_request_against_monthly_series
@@ -17,6 +18,9 @@ from hog_price_baseline import (
     download_direct_hog_history,
     load_cached_daily_series,
 )
+
+LOGO_PATH = Path(__file__).resolve().with_name("boss-hog-logo.png")
+LOGO_ROUTE = "/app/logo.png"
 
 
 @dataclass(frozen=True)
@@ -177,12 +181,31 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
         margin-bottom: 28px;
       }}
 
+      .hero-brand {{
+        display: flex;
+        align-items: center;
+        gap: 18px;
+      }}
+
+      .hero-heading {{
+        display: grid;
+        gap: 8px;
+      }}
+
+      .hero-logo {{
+        width: clamp(58px, 8vw, 84px);
+        height: auto;
+        flex: none;
+        filter: drop-shadow(0 10px 20px rgba(54, 37, 23, 0.18));
+      }}
+
       .eyebrow {{
         color: var(--accent);
-        font-size: 2rem;
+        font-size: 0.88rem;
         letter-spacing: 0.14em;
         text-transform: uppercase;
         font-weight: 700;
+        margin: 0;
       }}
 
       h1, h2 {{
@@ -455,6 +478,15 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
           position: static;
         }}
 
+        .hero-brand {{
+          align-items: flex-start;
+          gap: 14px;
+        }}
+
+        .hero-logo {{
+          width: 56px;
+        }}
+
         .results-grid,
         .detail-grid {{
           grid-template-columns: 1fr;
@@ -465,8 +497,13 @@ def render_page(state: UIState, *, summary: BacktestSummary | None, error: str |
   <body>
     <main class="page">
       <section class="hero">
-        <div class="eyebrow">Boss Hog</div>
-        <h1>Monthly RBP Hog Explorer</h1>
+        <div class="hero-brand">
+          <img class="hero-logo" src="{LOGO_ROUTE}" alt="Boss Hog logo">
+          <div class="hero-heading">
+            <div class="eyebrow">Boss Hog</div>
+            <h1>Monthly RBP Hog Explorer</h1>
+          </div>
+        </div>
       </section>
 
       {error_html}
@@ -578,6 +615,10 @@ class HogUIHandler(BaseHTTPRequestHandler):
 
     def _handle_request(self, *, include_body: bool) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == LOGO_ROUTE:
+            self._serve_logo(include_body=include_body)
+            return
+
         if parsed.path != "/":
             self.send_error(404, "Not found")
             return
@@ -601,6 +642,22 @@ class HogUIHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             # Browsers may cancel or replace in-flight requests while the backtest is running.
             # Treat client disconnects as a normal no-op instead of emitting noisy tracebacks.
+            return
+
+    def _serve_logo(self, *, include_body: bool) -> None:
+        if not LOGO_PATH.exists():
+            self.send_error(404, "Logo not found")
+            return
+
+        body = LOGO_PATH.read_bytes()
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if include_body:
+                self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
             return
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A003

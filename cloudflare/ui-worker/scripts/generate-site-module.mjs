@@ -6,12 +6,15 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const workerDir = path.resolve(scriptDir, "..");
 const publicDir = path.join(workerDir, "public", "app");
 const outputPath = path.join(workerDir, "src", "site.generated.js");
+const repoRoot = path.resolve(workerDir, "..", "..");
+const logoPath = path.join(repoRoot, "boss-hog-logo.png");
 
 async function main() {
-  const [indexHtml, appCss, appJs] = await Promise.all([
+  const [indexHtml, appCss, appJs, logoPng] = await Promise.all([
     readFile(path.join(publicDir, "index.html"), "utf-8"),
     readFile(path.join(publicDir, "styles.css"), "utf-8"),
     readFile(path.join(publicDir, "app.js"), "utf-8"),
+    readFile(logoPath),
   ]);
 
   const generated = [
@@ -19,6 +22,7 @@ async function main() {
     `export const INDEX_HTML = ${JSON.stringify(indexHtml)};`,
     `export const APP_CSS = ${JSON.stringify(appCss)};`,
     `export const APP_JS = ${JSON.stringify(appJs)};`,
+    `export const LOGO_PNG_BASE64 = ${JSON.stringify(logoPng.toString("base64"))};`,
     "",
   ].join("\n");
 

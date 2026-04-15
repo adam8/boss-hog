@@ -1,5 +1,7 @@
-import { APP_CSS, APP_JS, INDEX_HTML } from "./site.generated.js";
+import { APP_CSS, APP_JS, INDEX_HTML, LOGO_PNG_BASE64 } from "./site.generated.js";
 import { requireAccess } from "./access.js";
+
+let logoBytes;
 
 function jsonError(message, status) {
   return new Response(JSON.stringify({ error: message }), {
@@ -14,6 +16,22 @@ function textResponse(body, contentType) {
     headers: {
       "content-type": contentType,
       "cache-control": "no-store",
+    },
+  });
+}
+
+function decodeBase64(base64) {
+  const binary = atob(base64);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+function imageResponse(base64, contentType) {
+  logoBytes ??= decodeBase64(base64);
+  return new Response(logoBytes, {
+    status: 200,
+    headers: {
+      "content-type": contentType,
+      "cache-control": "public, max-age=3600",
     },
   });
 }
@@ -75,6 +93,13 @@ export default {
     }
     if (url.pathname === "/app/app.js") {
       return serveStaticAsset(request, env, APP_JS, "text/javascript; charset=utf-8");
+    }
+    if (url.pathname === "/app/logo.png") {
+      const accessFailure = await requireAccess(request, env);
+      if (accessFailure) {
+        return accessFailure;
+      }
+      return imageResponse(LOGO_PNG_BASE64, "image/png");
     }
     if (url.pathname.startsWith("/api/")) {
       return handleApi(request, env);
