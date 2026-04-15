@@ -7,6 +7,25 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+export const BOSS_HOGG_LOADING_QUOTES = [
+  "I got a hunch fatter than a county budget.",
+  "This forecast better squeal before the market does.",
+  "If this guess gets any richer, I may tax it.",
+  "I can smell a price move clear through the courthouse.",
+  "Shake the numbers again, there is profit in the mud somewhere.",
+  "A good prediction ought to strut in like it owns the county.",
+  "These hogs are whispering secrets louder than a campaign donor.",
+  "I ain't saying the model is honest, but it sure is confident.",
+  "That chart is curling like bacon on a hot skillet.",
+  "If the market jukes left, I will call it strategic genius.",
+  "Ain't no shame in a forecast wearing suspenders and swagger.",
+  "This here signal is slicker than grease on a courthouse step.",
+  "I want a prediction so sharp it could shave a deputy.",
+  "If them prices keep waddling higher, I may declare a holiday.",
+  "These numbers got more attitude than a parade float in July.",
+  "By the time this model finishes chewing, we may have tomorrow cornered.",
+];
+
 const FEATURE_METADATA = {
   ret_1m: {
     label: "1-Month Momentum",
@@ -231,14 +250,23 @@ function renderDetailCard({ label, value, code = "", infoId, summary, more }) {
 }
 
 function renderLoadingStatus(message) {
+  const quote = pickLoadingQuote();
   return `
     <span class="status-content">
       <span class="status-spinner" aria-hidden="true">
         <img class="status-spinner-logo" src="/app/logo.png" alt="">
       </span>
-      <span>${escapeHtml(message)}</span>
+      <span class="status-copy">
+        <span>${escapeHtml(message)}</span>
+        <span class="status-quote">"${escapeHtml(quote)}"</span>
+      </span>
     </span>
   `;
+}
+
+export function pickLoadingQuote(randomFn = Math.random) {
+  const index = Math.floor(randomFn() * BOSS_HOGG_LOADING_QUOTES.length);
+  return BOSS_HOGG_LOADING_QUOTES[index] || BOSS_HOGG_LOADING_QUOTES[0];
 }
 
 export function buildQuery(form) {

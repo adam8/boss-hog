@@ -1,7 +1,13 @@
 import { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
 
-import { boot, buildQuery, renderResults } from "../public/app/app.js";
+import {
+  BOSS_HOGG_LOADING_QUOTES,
+  boot,
+  buildQuery,
+  pickLoadingQuote,
+  renderResults,
+} from "../public/app/app.js";
 
 function makeDom() {
   return new JSDOM(
@@ -85,6 +91,11 @@ function deferred() {
 }
 
 describe("app ui", () => {
+  it("picks a loading quote from the fixed Boss Hogg-inspired list", () => {
+    expect(pickLoadingQuote(() => 0)).toBe(BOSS_HOGG_LOADING_QUOTES[0]);
+    expect(pickLoadingQuote(() => 0.9999)).toBe(BOSS_HOGG_LOADING_QUOTES[BOSS_HOGG_LOADING_QUOTES.length - 1]);
+  });
+
   it("builds the backtest query string", () => {
     const dom = makeDom();
     const form = dom.window.document.getElementById("controls-form");
@@ -165,6 +176,7 @@ describe("app ui", () => {
     expect(statusBar.innerHTML).toContain("status-spinner-logo");
     expect(statusBar.textContent).toContain("Running backtest");
     expect(statusBar.className).toContain("status-bar--loading");
+    expect(BOSS_HOGG_LOADING_QUOTES.some((quote) => statusBar.textContent.includes(quote))).toBe(true);
 
     pending.resolve({
       ok: true,

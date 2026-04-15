@@ -217,6 +217,18 @@ select,
   gap: 10px;
 }
 
+.status-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.status-quote {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  font-style: italic;
+}
+
 .status-bar--loading {
   color: var(--accent-strong);
 }
