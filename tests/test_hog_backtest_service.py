@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 import unittest
 
 from hog_backtest_service import (
@@ -54,8 +55,55 @@ class HogBacktestServiceTests(unittest.TestCase):
         self.assertEqual(payload["metrics"]["feature_pack"], "core_fundamentals")
         self.assertGreater(payload["metrics"]["out_of_sample_prediction_count"], 0)
         self.assertIn("prediction_date", payload["final_month"])
+        self.assertEqual(payload["final_month"]["target_month_bucket"], payload["final_month"]["prediction_date"])
+        self.assertEqual(payload["final_month"]["starting_month_bucket"], "2012-11-01")
         self.assertTrue(payload["average_feature_importance"])
         self.assertTrue(payload["average_exogenous_importance"])
+
+    def test_aggregate_request_excludes_incomplete_current_month(self) -> None:
+        request = BacktestRequest.from_mapping(
+            {
+                "feature_pack": "price_only",
+                "max_observations": "120",
+                "initial_window": "60",
+                "random_cells": "10",
+                "seed": "11",
+            }
+        )
+        partial_current_month = [
+            HogObservation(
+                date="2013-01-02",
+                avg_net_price=131.2,
+                head_count=2525.0,
+                avg_live_weight=304.4,
+                avg_carcass_weight=232.6,
+                avg_sort_loss=1.02,
+                avg_backfat=0.74,
+                avg_loin_depth=3.63,
+                avg_lean_percent=55.13,
+            ),
+            HogObservation(
+                date="2013-01-04",
+                avg_net_price=131.8,
+                head_count=2538.0,
+                avg_live_weight=304.7,
+                avg_carcass_weight=232.9,
+                avg_sort_loss=1.04,
+                avg_backfat=0.76,
+                avg_loin_depth=3.66,
+                avg_lean_percent=55.17,
+            ),
+        ]
+        payload = aggregate_request_from_daily_series(
+            self._build_daily_series() + partial_current_month,
+            request,
+            refreshed_at="2026-04-14T18:00:00+00:00",
+            today=date(2013, 1, 15),
+        )
+
+        self.assertEqual(payload["data_status"]["data_as_of"], "2013-01-04")
+        self.assertEqual(payload["final_month"]["target_month_bucket"], "2012-12-01")
+        self.assertEqual(payload["final_month"]["starting_month_bucket"], "2012-11-01")
 
     def _build_daily_series(self) -> list[HogObservation]:
         observations: list[HogObservation] = []

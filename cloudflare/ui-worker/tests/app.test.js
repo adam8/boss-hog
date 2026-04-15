@@ -44,6 +44,8 @@ const payload = {
     feature_pack: "core_fundamentals",
   },
   final_month: {
+    target_month_bucket: "2026-03-01",
+    starting_month_bucket: "2026-02-01",
     prediction_date: "2026-03-01",
     predicted_next_month_log_return: 0.0123,
     actual_next_month_log_return: 0.0119,
@@ -73,7 +75,7 @@ describe("app ui", () => {
 
   it("renders the summary panels", () => {
     const html = renderResults(payload);
-    expect(html).toContain("Final Out-of-Sample Month");
+    expect(html).toContain("Final Completed Target Month");
     expect(html).toContain("Average Exogenous Importance");
     expect(html).toContain("Average Loin Depth");
     expect(html).toContain("<code>loin_depth_avg</code>");
@@ -81,6 +83,9 @@ describe("app ui", () => {
     expect(html).toContain("Correlation between predicted and realized next-month log returns");
     expect(html).toContain('data-info="feature-loin-depth-avg-0"');
     expect(html).toContain("another carcass composition measure");
+    expect(html).toContain("Target Month (monthly average bucket)");
+    expect(html).toContain("March 2026");
+    expect(html).toContain("<code>2026-03-01</code>");
   });
 
   it("toggles the deeper info text with the more button", async () => {
@@ -161,6 +166,26 @@ describe("app ui", () => {
 
     metricInfoButton.click();
     expect(metricInfoPanel.hidden).toBe(false);
+  });
+
+  it("binds info buttons inside the final target month cards", async () => {
+    const dom = makeDom();
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => payload,
+    }));
+
+    await boot(dom.window.document, fetchMock);
+
+    const resultsRoot = dom.window.document.getElementById("results-root");
+    const targetMonthButton = resultsRoot.querySelector("[data-info='target-month-info']");
+    const targetMonthPanel = resultsRoot.querySelector("#target-month-info");
+
+    expect(targetMonthPanel.hidden).toBe(true);
+
+    targetMonthButton.click();
+    expect(targetMonthPanel.hidden).toBe(false);
+    expect(targetMonthPanel.textContent).toContain("2026-04-01 means the April 2026 monthly bucket");
   });
 
   it("binds info buttons for feature rows inside importance lists", async () => {

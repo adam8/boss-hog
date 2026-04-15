@@ -122,6 +122,8 @@ def build_payload(
     refreshed_at: str | None = None,
 ) -> dict[str, object]:
     last_index = len(summary.predictions) - 1
+    target_month_bucket = summary.prediction_dates[last_index]
+    starting_month_bucket = _previous_month_bucket(target_month_bucket)
     return {
         "request": request.as_payload(),
         "data_status": {
@@ -139,6 +141,8 @@ def build_payload(
             "feature_pack": summary.feature_pack,
         },
         "final_month": {
+            "target_month_bucket": target_month_bucket,
+            "starting_month_bucket": starting_month_bucket,
             "prediction_date": summary.prediction_dates[last_index],
             "predicted_next_month_log_return": round(summary.predictions[last_index], 6),
             "actual_next_month_log_return": round(summary.actuals[last_index], 6),
@@ -164,8 +168,10 @@ def aggregate_request_from_daily_series(
     purchase_type: str = DEFAULT_PURCHASE_TYPE,
     source: str = "USDA AMS direct hog avg_net_price",
     refreshed_at: str | None = None,
+    today: date | None = None,
 ) -> dict[str, object]:
-    monthly_series = aggregate_monthly_average(series)
+    filtered_daily_series = _drop_incomplete_current_month(series, today=today)
+    monthly_series = aggregate_monthly_average(filtered_daily_series)
     summary = run_request_against_monthly_series(
         monthly_series,
         request,
@@ -195,6 +201,34 @@ def _sorted_importances(importances: Mapping[str, float]) -> list[dict[str, floa
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _drop_incomplete_current_month(
+    series: Sequence[HogObservation],
+    *,
+    today: date | None = None,
+) -> list[HogObservation]:
+    observations = sorted(series, key=lambda point: point.date)
+    if not observations:
+        raise ValueError("Series must contain at least one observation.")
+    effective_today = today or datetime.now(timezone.utc).date()
+    current_month_prefix = effective_today.strftime("%Y-%m")
+    latest_month_prefix = observations[-1].date[:7]
+    if latest_month_prefix != current_month_prefix:
+        return observations
+
+    trimmed = [observation for observation in observations if observation.date[:7] != current_month_prefix]
+    if not trimmed:
+        raise ValueError("No completed month remains after excluding the incomplete current month.")
+    return trimmed
+
+
+def _previous_month_bucket(bucket_date: str) -> str:
+    year = int(bucket_date[:4])
+    month = int(bucket_date[5:7])
+    if month == 1:
+        return f"{year - 1:04d}-12-01"
+    return f"{year:04d}-{month - 1:02d}-01"
 
 
 def _read_feature_pack(raw_value: object, default: str) -> str:

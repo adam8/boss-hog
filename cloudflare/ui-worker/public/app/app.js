@@ -174,6 +174,62 @@ function renderMetricCard({ label, value, valueClass = "", infoId, summary, more
   `;
 }
 
+function formatMonthBucket(bucketDate) {
+  const [year, month] = String(bucketDate).split("-");
+  const monthIndex = Number(month) - 1;
+  const monthNames = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  if (!year || !monthNames[monthIndex]) {
+    return {
+      label: escapeHtml(bucketDate),
+      code: escapeHtml(bucketDate),
+    };
+  }
+  return {
+    label: `${monthNames[monthIndex]} ${year}`,
+    code: String(bucketDate),
+  };
+}
+
+function previousMonthBucket(bucketDate) {
+  const [yearRaw, monthRaw] = String(bucketDate).split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return String(bucketDate);
+  }
+  if (month === 1) {
+    return `${year - 1}-12-01`;
+  }
+  return `${year}-${String(month - 1).padStart(2, "0")}-01`;
+}
+
+function renderDetailCard({ label, value, code = "", infoId, summary, more }) {
+  return `
+    <div class="detail-card">
+      <div class="detail-label-row">
+        <span>${escapeHtml(label)}</span>
+        <button class="info-button" type="button" data-info="${escapeHtml(infoId)}" aria-expanded="false">i</button>
+      </div>
+      <strong>${value}</strong>
+      ${code ? `<div class="detail-code"><code>${escapeHtml(code)}</code></div>` : ""}
+      ${renderInfoPanel(infoId, summary, more)}
+    </div>
+  `;
+}
+
 function renderLoadingStatus(message) {
   return `
     <span class="status-content">
@@ -199,6 +255,10 @@ export function renderResults(payload) {
   const metrics = payload.metrics;
   const finalMonth = payload.final_month;
   const dataStatus = payload.data_status;
+  const targetMonthBucket = finalMonth.target_month_bucket || finalMonth.prediction_date;
+  const startingMonthBucket = finalMonth.starting_month_bucket || previousMonthBucket(targetMonthBucket);
+  const targetMonth = formatMonthBucket(targetMonthBucket);
+  const startingMonth = formatMonthBucket(startingMonthBucket);
 
   return `
     <div class="results-grid">
@@ -248,15 +308,66 @@ export function renderResults(payload) {
 
       <section class="panel">
         <div class="panel-heading">
-          <h2>Final Out-of-Sample Month</h2>
+          <h2>Final Completed Target Month</h2>
+          <button class="info-button" type="button" data-info="final-target-info" aria-expanded="false">i</button>
         </div>
+        ${renderInfoPanel(
+          "final-target-info",
+          "This section shows the latest fully completed target month included in the rolling backtest.",
+          "The model uses one month to predict the next month's average. If the current calendar month is still in progress, that unfinished month is excluded so the final example stays comparable and complete.",
+        )}
         <div class="detail-grid">
-          <div><span>Predicted Month</span><strong>${escapeHtml(finalMonth.prediction_date)}</strong></div>
-          <div><span>Predicted Next-Month Log Return</span><strong>${Number(finalMonth.predicted_next_month_log_return).toFixed(4)}</strong></div>
-          <div><span>Actual Next-Month Log Return</span><strong>${Number(finalMonth.actual_next_month_log_return).toFixed(4)}</strong></div>
-          <div><span>Starting Month Price Average</span><strong>${Number(finalMonth.starting_month_price_average).toFixed(2)}</strong></div>
-          <div><span>Predicted Next Month Price Average</span><strong>${Number(finalMonth.predicted_next_month_price_average).toFixed(2)}</strong></div>
-          <div><span>Actual Next Month Price Average</span><strong>${Number(finalMonth.actual_next_month_price_average).toFixed(2)}</strong></div>
+          ${renderDetailCard({
+            label: "Target Month (monthly average bucket)",
+            value: escapeHtml(targetMonth.label),
+            code: targetMonth.code,
+            infoId: "target-month-info",
+            summary: "The month being forecast, labeled with the first day of that month.",
+            more: "For example, 2026-04-01 means the April 2026 monthly bucket. It is not a point forecast made on April 1, and it is not a forecast for May.",
+          })}
+          ${renderDetailCard({
+            label: "Starting Month Used for Forecast",
+            value: escapeHtml(startingMonth.label),
+            code: startingMonth.code,
+            infoId: "starting-month-info",
+            summary: "The completed month whose information was used to forecast the target month.",
+            more: "In simple terms, the model looks at what the market looked like in this starting month, then predicts the average price move into the next month.",
+          })}
+          ${renderDetailCard({
+            label: "Predicted Target-Month Log Return",
+            value: Number(finalMonth.predicted_next_month_log_return).toFixed(4),
+            infoId: "predicted-return-info",
+            summary: "The model's forecasted log return from the starting month average into the target month average.",
+            more: "This is not a plain percentage, but for small moves it is close. A positive value means the model expected the target month average price to be higher than the starting month average price.",
+          })}
+          ${renderDetailCard({
+            label: "Actual Target-Month Log Return",
+            value: Number(finalMonth.actual_next_month_log_return).toFixed(4),
+            infoId: "actual-return-info",
+            summary: "The realized log return from the starting month average into the target month average.",
+            more: "This is what actually happened after the target month finished. Comparing this with the predicted log return shows whether the model got direction and size roughly right.",
+          })}
+          ${renderDetailCard({
+            label: "Starting Month Average Price",
+            value: Number(finalMonth.starting_month_price_average).toFixed(2),
+            infoId: "starting-price-info",
+            summary: "The monthly average price in the starting month used as the forecast base.",
+            more: "Think of this as the base price level the forecast starts from before projecting into the target month.",
+          })}
+          ${renderDetailCard({
+            label: "Predicted Target-Month Average Price",
+            value: Number(finalMonth.predicted_next_month_price_average).toFixed(2),
+            infoId: "predicted-price-info",
+            summary: "The target month average price implied by the model's predicted log return.",
+            more: "This translates the return forecast back into a dollar price so it is easier to compare with the realized target-month average.",
+          })}
+          ${renderDetailCard({
+            label: "Actual Target-Month Average Price",
+            value: Number(finalMonth.actual_next_month_price_average).toFixed(2),
+            infoId: "actual-price-info",
+            summary: "The realized average price for the completed target month.",
+            more: "This is the actual monthly average once the target month finished. It is the clean comparison point for the model's predicted target-month average price.",
+          })}
         </div>
       </section>
 
