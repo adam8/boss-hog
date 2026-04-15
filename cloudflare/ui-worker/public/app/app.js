@@ -7,14 +7,115 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function importanceList(items) {
+const FEATURE_EXPLANATIONS = {
+  ret_1m: {
+    summary: "The log return from the prior month to the current month.",
+    more: "In simple terms, this is the freshest one-month momentum signal. It tells the model whether price was just rising or falling right before the forecast month.",
+  },
+  ret_3m: {
+    summary: "The total log return over the last 3 months.",
+    more: "This is a short-term momentum view that smooths out one noisy month. It helps the model see whether the recent quarter has been generally strong or weak.",
+  },
+  ret_6m: {
+    summary: "The total log return over the last 6 months.",
+    more: "This is a medium-term momentum signal. It gives the model a broader price trend than the shorter 1-month and 3-month views.",
+  },
+  ret_12m: {
+    summary: "The total log return over the last 12 months.",
+    more: "This is the one-year momentum view. It helps the model compare the current month with longer seasonal and trend patterns in hog prices.",
+  },
+  ma_gap_3m: {
+    summary: "How far the current price sits above or below the 3-month average price.",
+    more: "In simple terms, this asks whether the market is stretched relative to its recent level. A positive gap means price is above its short moving average; a negative gap means it is below.",
+  },
+  ma_gap_12m: {
+    summary: "How far the current price sits above or below the 12-month average price.",
+    more: "This is the same idea as the 3-month gap, but against the last year instead of the last quarter. It gives a broader view of whether price is rich or weak versus its longer history.",
+  },
+  vol_3m: {
+    summary: "The sample volatility of monthly returns over the last 3 months.",
+    more: "This measures how choppy the market has been very recently. Higher values mean price has been moving around more from month to month.",
+  },
+  vol_12m: {
+    summary: "The sample volatility of monthly returns over the last 12 months.",
+    more: "This is the longer-run version of recent volatility. It helps the model tell calm market periods apart from more unstable ones.",
+  },
+  month_sin: {
+    summary: "A sine-based encoding of the calendar month, used to represent seasonality on a smooth yearly cycle.",
+    more: "Months repeat in a circle, not on a straight line. `month_sin` and `month_cos` work together so December and January are treated as close neighbors instead of opposite ends of a numeric scale.",
+  },
+  month_cos: {
+    summary: "A cosine-based encoding of the calendar month, paired with `month_sin` to represent yearly seasonality.",
+    more: "On its own this is not very intuitive, but together with `month_sin` it gives the model a clean circular map of the year. That lets it learn seasonal behavior without treating month numbers as a straight line.",
+  },
+  head_count_avg: {
+    summary: "The average daily head count in the month.",
+    more: "In simple terms, this is a rough quantity signal for how many hogs were moving through the report. It gives the model some supply context beyond price alone.",
+  },
+  live_weight_avg: {
+    summary: "The average live weight reported during the month.",
+    more: "This tells the model how heavy the hogs were before processing. It can help distinguish different market conditions that may not show up in price alone.",
+  },
+  carcass_weight_avg: {
+    summary: "The average carcass weight reported during the month.",
+    more: "This is a processed-weight measure after slaughter. It gives another physical-market context signal that can differ from live weight.",
+  },
+  sort_loss_avg: {
+    summary: "The average sort loss reported during the month.",
+    more: "Sort loss reflects deductions or adjustments tied to how hogs fit preferred specifications. It can capture quality or composition effects in the reported market.",
+  },
+  backfat_avg: {
+    summary: "The average backfat measure reported during the month.",
+    more: "This is one of the carcass composition signals in the USDA report. It helps describe what type of hogs were in the market, not just what price they fetched.",
+  },
+  loin_depth_avg: {
+    summary: "The average loin depth reported during the month.",
+    more: "Loin depth is another carcass composition measure. In simple terms, it helps describe hog quality and physical characteristics that may matter for how relevant past months really were.",
+  },
+  lean_percent_avg: {
+    summary: "The average lean percent reported during the month.",
+    more: "This is the reported share of lean meat. It gives the model a simple quality mix signal from the same USDA report used for price.",
+  },
+};
+
+function slugify(value) {
+  return String(value)
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "");
+}
+
+function importanceList(items, listIdPrefix) {
   if (!items.length) {
     return "<p>No importance values were returned for this run.</p>";
   }
   return `<ol class="importance-list">${items
     .map(
-      (item) =>
-        `<li><strong>${escapeHtml(item.feature)}</strong><span>${Number(item.importance).toFixed(4)}</span></li>`,
+      (item, index) => {
+        const featureName = String(item.feature);
+        const explanation = FEATURE_EXPLANATIONS[featureName];
+        const infoId = `${listIdPrefix}-${slugify(featureName)}-${index}`;
+        return `
+          <li>
+            <div class="importance-item-top">
+              <div class="importance-item-label">
+                <strong>${escapeHtml(featureName)}</strong>
+                ${
+                  explanation
+                    ? `<button class="info-button" type="button" data-info="${escapeHtml(infoId)}" aria-expanded="false">i</button>`
+                    : ""
+                }
+              </div>
+              <span>${Number(item.importance).toFixed(4)}</span>
+            </div>
+            ${
+              explanation
+                ? renderInfoPanel(infoId, explanation.summary, explanation.more)
+                : ""
+            }
+          </li>
+        `;
+      },
     )
     .join("")}</ol>`;
 }
@@ -139,7 +240,7 @@ export function renderResults(payload) {
         <div class="panel-heading">
           <h2>Average Feature Importance</h2>
         </div>
-        ${importanceList(payload.average_feature_importance)}
+        ${importanceList(payload.average_feature_importance, "feature")}
       </section>
 
       ${
@@ -148,7 +249,7 @@ export function renderResults(payload) {
                <div class="panel-heading">
                  <h2>Average Exogenous Importance</h2>
                </div>
-               ${importanceList(payload.average_exogenous_importance)}
+               ${importanceList(payload.average_exogenous_importance, "exogenous")}
              </section>`
           : ""
       }

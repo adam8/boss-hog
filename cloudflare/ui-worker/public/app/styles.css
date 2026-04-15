@@ -330,10 +330,8 @@ select,
 }
 
 .importance-list li {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  align-items: baseline;
+  display: grid;
+  gap: 10px;
 }
 
 .importance-list strong {
@@ -343,6 +341,20 @@ select,
 .importance-list span {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+.importance-item-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: baseline;
+}
+
+.importance-item-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 880px) {

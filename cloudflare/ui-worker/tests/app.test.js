@@ -78,6 +78,8 @@ describe("app ui", () => {
     expect(html).toContain("loin_depth_avg");
     expect(html).toContain('data-info="corr-info"');
     expect(html).toContain("Correlation between predicted and realized next-month log returns");
+    expect(html).toContain('data-info="feature-loin-depth-avg-0"');
+    expect(html).toContain("another carcass composition measure");
   });
 
   it("toggles the deeper info text with the more button", async () => {
@@ -158,5 +160,25 @@ describe("app ui", () => {
 
     metricInfoButton.click();
     expect(metricInfoPanel.hidden).toBe(false);
+  });
+
+  it("binds info buttons for feature rows inside importance lists", async () => {
+    const dom = makeDom();
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => payload,
+    }));
+
+    await boot(dom.window.document, fetchMock);
+
+    const resultsRoot = dom.window.document.getElementById("results-root");
+    const featureInfoButton = resultsRoot.querySelector("[data-info='feature-loin-depth-avg-0']");
+    const featureInfoPanel = resultsRoot.querySelector("#feature-loin-depth-avg-0");
+
+    expect(featureInfoPanel.hidden).toBe(true);
+
+    featureInfoButton.click();
+    expect(featureInfoPanel.hidden).toBe(false);
+    expect(featureInfoPanel.textContent).toContain("carcass composition");
   });
 });
