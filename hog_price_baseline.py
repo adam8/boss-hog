@@ -86,6 +86,15 @@ class SupervisedDataset:
 
 
 @dataclass(frozen=True)
+class ForecastFeatureRow:
+    row: list[float]
+    feature_names: list[str]
+    starting_month_bucket: str
+    target_month_bucket: str
+    starting_month_price_average: float
+
+
+@dataclass(frozen=True)
 class BacktestSummary:
     series_name: str
     feature_pack: str
@@ -252,10 +261,7 @@ def build_monthly_dataset(
         raise ValueError("Series is too short for the requested lookback.")
 
     observations = sorted(series, key=lambda point: point.date)
-    feature_names = PRICE_FEATURE_NAMES + [
-        public_name
-        for public_name, _ in FEATURE_PACKS[feature_pack]
-    ]
+    feature_names = _feature_names_for_pack(feature_pack)
     selected_fields = [field_name for _, field_name in FEATURE_PACKS[feature_pack]]
     rows: list[list[float]] = []
     targets: list[float] = []
@@ -271,38 +277,17 @@ def build_monthly_dataset(
         history = observations[index - lookback : index + 1]
         current = observations[index]
         target = observations[index + 1]
-        price_window = [point.avg_net_price for point in history]
         target_price = target.avg_net_price
-        if any(price is None or price <= 0.0 for price in price_window):
-            continue
         if target_price is None or target_price <= 0.0:
             continue
-        if any(getattr(current, field_name) is None for field_name in selected_fields):
+        row_context = _build_feature_row_context(history, current, selected_fields)
+        if row_context is None:
             continue
 
-        current_prices_window = [float(price) for price in price_window]
-        trailing_returns = [
-            math.log(current_price / previous_price)
-            for previous_price, current_price in zip(current_prices_window, current_prices_window[1:])
-        ]
-        month_number = int(current.date[5:7])
-        row = [
-            trailing_returns[-1],
-            sum(trailing_returns[-3:]),
-            sum(trailing_returns[-6:]),
-            sum(trailing_returns[-12:]),
-            current_prices_window[-1] / mean(current_prices_window[-3:]) - 1.0,
-            current_prices_window[-1] / mean(current_prices_window[-12:]) - 1.0,
-            _sample_standard_deviation(trailing_returns[-3:]),
-            _sample_standard_deviation(trailing_returns[-12:]),
-            math.sin(2.0 * math.pi * month_number / 12.0),
-            math.cos(2.0 * math.pi * month_number / 12.0),
-        ]
-        row.extend(float(getattr(current, field_name)) for field_name in selected_fields)
-        rows.append(row)
-        targets.append(math.log(float(target_price) / current_prices_window[-1]))
+        rows.append(row_context.row)
+        targets.append(math.log(float(target_price) / row_context.starting_month_price_average))
         dates.append(target.date)
-        current_prices.append(current_prices_window[-1])
+        current_prices.append(row_context.starting_month_price_average)
         next_prices.append(float(target_price))
 
     if not rows:
@@ -324,6 +309,37 @@ def build_price_only_dataset(
     lookback: int = 12,
 ) -> SupervisedDataset:
     return build_monthly_dataset(series, lookback=lookback, feature_pack=PRICE_ONLY_FEATURE_PACK)
+
+
+def build_current_forecast_row(
+    series: Sequence[HogObservation],
+    *,
+    lookback: int = 12,
+    feature_pack: str = PRICE_ONLY_FEATURE_PACK,
+) -> ForecastFeatureRow:
+    _validate_feature_pack(feature_pack)
+    if lookback < 12:
+        raise ValueError("lookback must be at least 12.")
+    observations = sorted(series, key=lambda point: point.date)
+    if len(observations) < lookback + 1:
+        raise ValueError("Series is too short for a current forecast row.")
+
+    history = observations[-(lookback + 1) :]
+    if not _has_consecutive_months(history):
+        raise ValueError("Latest monthly window is not consecutive.")
+
+    current = observations[-1]
+    selected_fields = [field_name for _, field_name in FEATURE_PACKS[feature_pack]]
+    row_context = _build_feature_row_context(history, current, selected_fields)
+    if row_context is None:
+        raise ValueError("Latest completed month cannot produce a current forecast row.")
+    return ForecastFeatureRow(
+        row=row_context.row,
+        feature_names=_feature_names_for_pack(feature_pack),
+        starting_month_bucket=current.date,
+        target_month_bucket=_next_month_bucket(current.date),
+        starting_month_price_average=row_context.starting_month_price_average,
+    )
 
 
 def run_monthly_backtest(
@@ -612,6 +628,52 @@ def _format_optional_float(value: float | None) -> str:
     return f"{value:.4f}"
 
 
+@dataclass(frozen=True)
+class _FeatureRowContext:
+    row: list[float]
+    starting_month_price_average: float
+
+
+def _feature_names_for_pack(feature_pack: str) -> list[str]:
+    return PRICE_FEATURE_NAMES + [public_name for public_name, _ in FEATURE_PACKS[feature_pack]]
+
+
+def _build_feature_row_context(
+    history: Sequence[HogObservation],
+    current: HogObservation,
+    selected_fields: Sequence[str],
+) -> _FeatureRowContext | None:
+    price_window = [point.avg_net_price for point in history]
+    if any(price is None or price <= 0.0 for price in price_window):
+        return None
+    if any(getattr(current, field_name) is None for field_name in selected_fields):
+        return None
+
+    current_prices_window = [float(price) for price in price_window]
+    trailing_returns = [
+        math.log(current_price / previous_price)
+        for previous_price, current_price in zip(current_prices_window, current_prices_window[1:])
+    ]
+    month_number = int(current.date[5:7])
+    row = [
+        trailing_returns[-1],
+        sum(trailing_returns[-3:]),
+        sum(trailing_returns[-6:]),
+        sum(trailing_returns[-12:]),
+        current_prices_window[-1] / mean(current_prices_window[-3:]) - 1.0,
+        current_prices_window[-1] / mean(current_prices_window[-12:]) - 1.0,
+        _sample_standard_deviation(trailing_returns[-3:]),
+        _sample_standard_deviation(trailing_returns[-12:]),
+        math.sin(2.0 * math.pi * month_number / 12.0),
+        math.cos(2.0 * math.pi * month_number / 12.0),
+    ]
+    row.extend(float(getattr(current, field_name)) for field_name in selected_fields)
+    return _FeatureRowContext(
+        row=row,
+        starting_month_price_average=current_prices_window[-1],
+    )
+
+
 def _validate_feature_pack(feature_pack: str) -> None:
     if feature_pack not in FEATURE_PACKS:
         valid = ", ".join(sorted(FEATURE_PACKS))
@@ -627,6 +689,14 @@ def _month_index(date_string: str) -> int:
     year = int(date_string[:4])
     month = int(date_string[5:7])
     return year * 12 + month
+
+
+def _next_month_bucket(bucket_date: str) -> str:
+    year = int(bucket_date[:4])
+    month = int(bucket_date[5:7])
+    if month == 12:
+        return f"{year + 1:04d}-01-01"
+    return f"{year:04d}-{month + 1:02d}-01"
 
 
 def _normalize_report_date(raw_date: str) -> str:

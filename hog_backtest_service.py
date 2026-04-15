@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+import math
 from typing import Mapping, Sequence
 
 from hog_price_baseline import (
+    build_current_forecast_row,
+    build_monthly_dataset,
     CORE_FUNDAMENTALS_FEATURE_PACK,
     DEFAULT_CACHE_PATH,
     DEFAULT_PURCHASE_TYPE,
@@ -15,6 +18,7 @@ from hog_price_baseline import (
     aggregate_monthly_average,
     run_monthly_backtest,
 )
+from rbp import RelevanceBasedPredictor
 
 
 DEFAULT_MAX_OBSERVATIONS = 240
@@ -155,6 +159,66 @@ def build_payload(
     }
 
 
+def build_current_forecast(
+    series: Sequence[HogObservation],
+    request: BacktestRequest,
+) -> dict[str, object]:
+    bounded_series = _bounded_monthly_series(series, request.max_observations)
+    dataset = build_monthly_dataset(bounded_series, feature_pack=request.feature_pack)
+    forecast_row = build_current_forecast_row(bounded_series, feature_pack=request.feature_pack)
+    predictor = RelevanceBasedPredictor(
+        random_cells=request.random_cells,
+        seed=request.seed,
+    )
+    predictor.fit(dataset.X, dataset.y, feature_names=dataset.feature_names)
+    prediction = predictor.predict_one(forecast_row.row)
+    predicted_target_price = forecast_row.starting_month_price_average * math.exp(prediction.prediction)
+    return {
+        "starting_month_bucket": forecast_row.starting_month_bucket,
+        "target_month_bucket": forecast_row.target_month_bucket,
+        "starting_month_price_average": round(forecast_row.starting_month_price_average, 4),
+        "predicted_target_month_log_return": round(prediction.prediction, 6),
+        "predicted_target_month_price_average": round(predicted_target_price, 4),
+        "ex_ante_fit": round(prediction.fit, 6),
+        "top_feature_importance": _sorted_importances(prediction.variable_importance)[:5],
+    }
+
+
+def build_provisional_next_next_forecast(
+    completed_series: Sequence[HogObservation],
+    provisional_series: Sequence[HogObservation],
+    request: BacktestRequest,
+    *,
+    data_through: str,
+) -> dict[str, object] | None:
+    if not provisional_series:
+        return None
+    if provisional_series[-1].date == completed_series[-1].date:
+        return None
+
+    bounded_completed_series = _bounded_monthly_series(completed_series, request.max_observations)
+    bounded_provisional_series = _bounded_provisional_monthly_series(provisional_series, request.max_observations)
+    dataset = build_monthly_dataset(bounded_completed_series, feature_pack=request.feature_pack)
+    forecast_row = build_current_forecast_row(bounded_provisional_series, feature_pack=request.feature_pack)
+    predictor = RelevanceBasedPredictor(
+        random_cells=request.random_cells,
+        seed=request.seed,
+    )
+    predictor.fit(dataset.X, dataset.y, feature_names=dataset.feature_names)
+    prediction = predictor.predict_one(forecast_row.row)
+    predicted_target_price = forecast_row.starting_month_price_average * math.exp(prediction.prediction)
+    return {
+        "starting_month_bucket": forecast_row.starting_month_bucket,
+        "target_month_bucket": forecast_row.target_month_bucket,
+        "starting_month_price_average_so_far": round(forecast_row.starting_month_price_average, 4),
+        "predicted_target_month_log_return": round(prediction.prediction, 6),
+        "predicted_target_month_price_average": round(predicted_target_price, 4),
+        "ex_ante_fit": round(prediction.fit, 6),
+        "data_through": data_through,
+        "top_feature_importance": _sorted_importances(prediction.variable_importance)[:5],
+    }
+
+
 def latest_observation_date(series: Sequence[HogObservation]) -> str:
     if not series:
         raise ValueError("Series must contain at least one observation.")
@@ -172,13 +236,14 @@ def aggregate_request_from_daily_series(
 ) -> dict[str, object]:
     filtered_daily_series = _drop_incomplete_current_month(series, today=today)
     monthly_series = aggregate_monthly_average(filtered_daily_series)
+    provisional_monthly_series = aggregate_monthly_average(series)
     summary = run_request_against_monthly_series(
         monthly_series,
         request,
         series_name=purchase_type,
         source_path=str(DEFAULT_CACHE_PATH),
     )
-    return build_payload(
+    payload = build_payload(
         request,
         summary,
         purchase_type=purchase_type,
@@ -186,6 +251,14 @@ def aggregate_request_from_daily_series(
         data_as_of=latest_observation_date(series),
         refreshed_at=refreshed_at,
     )
+    payload["current_forecast"] = build_current_forecast(monthly_series, request)
+    payload["provisional_next_next_forecast"] = build_provisional_next_next_forecast(
+        monthly_series,
+        provisional_monthly_series,
+        request,
+        data_through=latest_observation_date(series),
+    )
+    return payload
 
 
 def _sorted_importances(importances: Mapping[str, float]) -> list[dict[str, float | str]]:
@@ -201,6 +274,20 @@ def _sorted_importances(importances: Mapping[str, float]) -> list[dict[str, floa
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _bounded_monthly_series(series: Sequence[HogObservation], max_observations: int) -> list[HogObservation]:
+    observations = list(series)
+    if max_observations:
+        return observations[-max_observations:]
+    return observations
+
+
+def _bounded_provisional_monthly_series(series: Sequence[HogObservation], max_observations: int) -> list[HogObservation]:
+    observations = list(series)
+    if max_observations:
+        return observations[-(max_observations + 1) :]
+    return observations
 
 
 def _drop_incomplete_current_month(

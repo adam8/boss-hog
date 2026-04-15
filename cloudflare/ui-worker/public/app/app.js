@@ -254,11 +254,25 @@ export function buildQuery(form) {
 export function renderResults(payload) {
   const metrics = payload.metrics;
   const finalMonth = payload.final_month;
+  const currentForecast = payload.current_forecast;
+  const provisionalForecast = payload.provisional_next_next_forecast;
   const dataStatus = payload.data_status;
   const targetMonthBucket = finalMonth.target_month_bucket || finalMonth.prediction_date;
   const startingMonthBucket = finalMonth.starting_month_bucket || previousMonthBucket(targetMonthBucket);
   const targetMonth = formatMonthBucket(targetMonthBucket);
   const startingMonth = formatMonthBucket(startingMonthBucket);
+  const currentTargetMonth = currentForecast
+    ? formatMonthBucket(currentForecast.target_month_bucket)
+    : null;
+  const currentStartingMonth = currentForecast
+    ? formatMonthBucket(currentForecast.starting_month_bucket)
+    : null;
+  const provisionalTargetMonth = provisionalForecast
+    ? formatMonthBucket(provisionalForecast.target_month_bucket)
+    : null;
+  const provisionalStartingMonth = provisionalForecast
+    ? formatMonthBucket(provisionalForecast.starting_month_bucket)
+    : null;
 
   return `
     <div class="results-grid">
@@ -305,6 +319,137 @@ export function renderResults(payload) {
           <div><span>Refreshed At</span><strong>${escapeHtml(dataStatus.refreshed_at)}</strong></div>
         </div>
       </section>
+
+      ${
+        currentForecast
+          ? `<section class="panel">
+               <div class="panel-heading">
+                 <h2>Current Forecast</h2>
+                 <button class="info-button" type="button" data-info="current-forecast-info" aria-expanded="false">i</button>
+               </div>
+               ${renderInfoPanel(
+                 "current-forecast-info",
+                 "This is the live forward-looking forecast built from the latest completed month, not a historical backtest example.",
+                 "If today is in the middle of April, the latest completed month is March. That means the current forecast targets the April monthly bucket. The model does not forecast May until April itself is complete.",
+               )}
+               <div class="detail-grid">
+                 ${renderDetailCard({
+                   label: "Forecast Target Month",
+                   value: escapeHtml(currentTargetMonth.label),
+                   code: currentTargetMonth.code,
+                   infoId: "current-target-month-info",
+                   summary: "The next month bucket being forecast right now.",
+                   more: "This is the month the live forecast is targeting using the latest completed month as the starting point. During an in-progress month, this will usually be the current calendar month.",
+                 })}
+                 ${renderDetailCard({
+                   label: "Starting Month Used for Forecast",
+                   value: escapeHtml(currentStartingMonth.label),
+                   code: currentStartingMonth.code,
+                   infoId: "current-starting-month-info",
+                   summary: "The latest completed month used as the forecast base.",
+                   more: "This is the last fully completed monthly bucket with settled inputs. The model uses this month to project the next target month.",
+                 })}
+                 ${renderDetailCard({
+                   label: "Predicted Target-Month Log Return",
+                   value: Number(currentForecast.predicted_target_month_log_return).toFixed(4),
+                   infoId: "current-predicted-return-info",
+                   summary: "The model's current forward-looking log-return forecast from the starting month average into the target month average.",
+                   more: "A positive value means the model expects the target month average to be above the starting month average. This is the live forecast counterpart to the historical backtest return field.",
+                 })}
+                 ${renderDetailCard({
+                   label: "Predicted Target-Month Average Price",
+                   value: Number(currentForecast.predicted_target_month_price_average).toFixed(2),
+                   infoId: "current-predicted-price-info",
+                   summary: "The target month average price implied by the live forecast.",
+                   more: "This converts the predicted log return into a dollar price level so it reads more naturally than the raw return alone.",
+                 })}
+                 ${renderDetailCard({
+                   label: "Starting Month Average Price",
+                   value: Number(currentForecast.starting_month_price_average).toFixed(2),
+                   infoId: "current-starting-price-info",
+                   summary: "The average price of the latest completed starting month.",
+                   more: "This is the base price level from which the live forecast is projected.",
+                 })}
+                 ${renderDetailCard({
+                   label: "Current Ex-Ante Fit",
+                   value: Number(currentForecast.ex_ante_fit).toFixed(3),
+                   infoId: "current-fit-info",
+                   summary: "RBP's internal reliability score for the current live forecast.",
+                   more: "This is the model's own estimate of how trustworthy the live forecast looks before the target month finishes. Higher is better, but it is still a confidence signal rather than a guarantee.",
+                 })}
+               </div>
+             </section>`
+          : ""
+      }
+
+      ${
+        provisionalForecast
+          ? `<section class="panel">
+               <div class="panel-heading">
+                 <h2>Provisional Following-Month Forecast</h2>
+                 <button class="info-button" type="button" data-info="provisional-forecast-info" aria-expanded="false">i</button>
+               </div>
+               ${renderInfoPanel(
+                 "provisional-forecast-info",
+                 "This is a provisional forecast for the month after the current in-progress month, built using partial current-month data.",
+                 "If today is in the middle of April, this section uses April-so-far as the starting month and projects May. It is more forward-looking than the current forecast, but it is also less stable because the starting month is not finished yet.",
+               )}
+               <div class="detail-grid">
+                 ${renderDetailCard({
+                   label: "Provisional Target Month",
+                   value: escapeHtml(provisionalTargetMonth.label),
+                   code: provisionalTargetMonth.code,
+                   infoId: "provisional-target-month-info",
+                   summary: "The month after the current in-progress month being forecast provisionally.",
+                   more: "During April, this is the May monthly bucket. It is the next-next step relative to the latest completed month forecast.",
+                 })}
+                 ${renderDetailCard({
+                   label: "Current In-Progress Starting Month",
+                   value: escapeHtml(provisionalStartingMonth.label),
+                   code: provisionalStartingMonth.code,
+                   infoId: "provisional-starting-month-info",
+                   summary: "The current month bucket being used as the provisional starting point, even though it is not finished yet.",
+                   more: "This is why the forecast is labeled provisional. The month is still in progress, so its average and feature values can still move around before month-end.",
+                 })}
+                 ${renderDetailCard({
+                   label: "Current-Month Average Price So Far",
+                   value: Number(provisionalForecast.starting_month_price_average_so_far).toFixed(2),
+                   infoId: "provisional-starting-price-info",
+                   summary: "The current month average price calculated from the daily observations available so far.",
+                   more: "This is not the final monthly average yet. It will keep changing as more daily data arrives before the month closes.",
+                 })}
+                 ${renderDetailCard({
+                   label: "Predicted Following-Month Log Return",
+                   value: Number(provisionalForecast.predicted_target_month_log_return).toFixed(4),
+                   infoId: "provisional-return-info",
+                   summary: "The provisional forecasted log return from the current month-so-far average into the following target month average.",
+                   more: "This is the more forward-looking forecast. It answers the question: if the current month-so-far is the starting point, where does the model think the next month average could land?",
+                 })}
+                 ${renderDetailCard({
+                   label: "Predicted Following-Month Average Price",
+                   value: Number(provisionalForecast.predicted_target_month_price_average).toFixed(2),
+                   infoId: "provisional-price-info",
+                   summary: "The implied following-month average price from the provisional log-return forecast.",
+                   more: "This translates the provisional return forecast back into a dollar price so it is easier to read directly.",
+                 })}
+                 ${renderDetailCard({
+                   label: "Current-Month Data Through",
+                   value: escapeHtml(provisionalForecast.data_through),
+                   infoId: "provisional-data-through-info",
+                   summary: "The last daily observation included in the provisional starting month bucket.",
+                   more: "This tells you how current the partial-month inputs are. If more daily observations arrive, the provisional forecast can change.",
+                 })}
+                 ${renderDetailCard({
+                   label: "Provisional Ex-Ante Fit",
+                   value: Number(provisionalForecast.ex_ante_fit).toFixed(3),
+                   infoId: "provisional-fit-info",
+                   summary: "RBP's internal reliability score for the provisional following-month forecast.",
+                   more: "This gives a quick sense of how coherent the model thinks the provisional setup looks. It is still a confidence signal, not a guarantee, and it should generally be treated more cautiously than the completed-month forecast.",
+                 })}
+               </div>
+             </section>`
+          : ""
+      }
 
       <section class="panel">
         <div class="panel-heading">

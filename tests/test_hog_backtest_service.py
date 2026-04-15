@@ -57,6 +57,12 @@ class HogBacktestServiceTests(unittest.TestCase):
         self.assertIn("prediction_date", payload["final_month"])
         self.assertEqual(payload["final_month"]["target_month_bucket"], payload["final_month"]["prediction_date"])
         self.assertEqual(payload["final_month"]["starting_month_bucket"], "2012-11-01")
+        self.assertEqual(payload["current_forecast"]["starting_month_bucket"], "2012-12-01")
+        self.assertEqual(payload["current_forecast"]["target_month_bucket"], "2013-01-01")
+        self.assertIn("predicted_target_month_price_average", payload["current_forecast"])
+        self.assertGreater(payload["current_forecast"]["ex_ante_fit"], 0.0)
+        self.assertTrue(payload["current_forecast"]["top_feature_importance"])
+        self.assertIsNone(payload["provisional_next_next_forecast"])
         self.assertTrue(payload["average_feature_importance"])
         self.assertTrue(payload["average_exogenous_importance"])
 
@@ -104,6 +110,12 @@ class HogBacktestServiceTests(unittest.TestCase):
         self.assertEqual(payload["data_status"]["data_as_of"], "2013-01-04")
         self.assertEqual(payload["final_month"]["target_month_bucket"], "2012-12-01")
         self.assertEqual(payload["final_month"]["starting_month_bucket"], "2012-11-01")
+        self.assertEqual(payload["current_forecast"]["starting_month_bucket"], "2012-12-01")
+        self.assertEqual(payload["current_forecast"]["target_month_bucket"], "2013-01-01")
+        self.assertEqual(payload["provisional_next_next_forecast"]["starting_month_bucket"], "2013-01-01")
+        self.assertEqual(payload["provisional_next_next_forecast"]["target_month_bucket"], "2013-02-01")
+        self.assertEqual(payload["provisional_next_next_forecast"]["data_through"], "2013-01-04")
+        self.assertIn("predicted_target_month_price_average", payload["provisional_next_next_forecast"])
 
     def _build_daily_series(self) -> list[HogObservation]:
         observations: list[HogObservation] = []

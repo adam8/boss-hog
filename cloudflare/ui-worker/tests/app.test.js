@@ -53,6 +53,25 @@ const payload = {
     predicted_next_month_price_average: 88.41,
     actual_next_month_price_average: 88.37,
   },
+  current_forecast: {
+    starting_month_bucket: "2026-03-01",
+    target_month_bucket: "2026-04-01",
+    starting_month_price_average: 88.37,
+    predicted_target_month_log_return: 0.0172,
+    predicted_target_month_price_average: 89.91,
+    ex_ante_fit: 0.081,
+    top_feature_importance: [{ feature: "month_sin", importance: 0.22 }],
+  },
+  provisional_next_next_forecast: {
+    starting_month_bucket: "2026-04-01",
+    target_month_bucket: "2026-05-01",
+    starting_month_price_average_so_far: 89.12,
+    predicted_target_month_log_return: 0.0138,
+    predicted_target_month_price_average: 90.36,
+    ex_ante_fit: 0.071,
+    data_through: "2026-04-14",
+    top_feature_importance: [{ feature: "month_cos", importance: 0.19 }],
+  },
   average_feature_importance: [{ feature: "loin_depth_avg", importance: 0.21 }],
   average_exogenous_importance: [{ feature: "loin_depth_avg", importance: 0.21 }],
 };
@@ -75,6 +94,14 @@ describe("app ui", () => {
 
   it("renders the summary panels", () => {
     const html = renderResults(payload);
+    expect(html).toContain("Current Forecast");
+    expect(html).toContain("Forecast Target Month");
+    expect(html).toContain("April 2026");
+    expect(html).toContain("<code>2026-04-01</code>");
+    expect(html).toContain("Provisional Following-Month Forecast");
+    expect(html).toContain("Provisional Target Month");
+    expect(html).toContain("May 2026");
+    expect(html).toContain("<code>2026-05-01</code>");
     expect(html).toContain("Final Completed Target Month");
     expect(html).toContain("Average Exogenous Importance");
     expect(html).toContain("Average Loin Depth");
@@ -168,6 +195,26 @@ describe("app ui", () => {
     expect(metricInfoPanel.hidden).toBe(false);
   });
 
+  it("binds info buttons inside the current forecast cards", async () => {
+    const dom = makeDom();
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => payload,
+    }));
+
+    await boot(dom.window.document, fetchMock);
+
+    const resultsRoot = dom.window.document.getElementById("results-root");
+    const currentForecastButton = resultsRoot.querySelector("[data-info='current-forecast-info']");
+    const currentForecastPanel = resultsRoot.querySelector("#current-forecast-info");
+
+    expect(currentForecastPanel.hidden).toBe(true);
+
+    currentForecastButton.click();
+    expect(currentForecastPanel.hidden).toBe(false);
+    expect(currentForecastPanel.textContent).toContain("does not forecast May until April itself is complete");
+  });
+
   it("binds info buttons inside the final target month cards", async () => {
     const dom = makeDom();
     const fetchMock = vi.fn(async () => ({
@@ -186,6 +233,26 @@ describe("app ui", () => {
     targetMonthButton.click();
     expect(targetMonthPanel.hidden).toBe(false);
     expect(targetMonthPanel.textContent).toContain("2026-04-01 means the April 2026 monthly bucket");
+  });
+
+  it("binds info buttons inside the provisional forecast cards", async () => {
+    const dom = makeDom();
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => payload,
+    }));
+
+    await boot(dom.window.document, fetchMock);
+
+    const resultsRoot = dom.window.document.getElementById("results-root");
+    const provisionalButton = resultsRoot.querySelector("[data-info='provisional-forecast-info']");
+    const provisionalPanel = resultsRoot.querySelector("#provisional-forecast-info");
+
+    expect(provisionalPanel.hidden).toBe(true);
+
+    provisionalButton.click();
+    expect(provisionalPanel.hidden).toBe(false);
+    expect(provisionalPanel.textContent).toContain("uses April-so-far as the starting month and projects May");
   });
 
   it("binds info buttons for feature rows inside importance lists", async () => {

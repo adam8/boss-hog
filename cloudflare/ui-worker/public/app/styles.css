@@ -352,7 +352,7 @@ select,
 
 .importance-item-label {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
 }
