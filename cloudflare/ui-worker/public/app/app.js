@@ -7,72 +7,89 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-const FEATURE_EXPLANATIONS = {
+const FEATURE_METADATA = {
   ret_1m: {
+    label: "1-Month Momentum",
     summary: "The log return from the prior month to the current month.",
     more: "In simple terms, this is the freshest one-month momentum signal. It tells the model whether price was just rising or falling right before the forecast month.",
   },
   ret_3m: {
+    label: "3-Month Momentum",
     summary: "The total log return over the last 3 months.",
     more: "This is a short-term momentum view that smooths out one noisy month. It helps the model see whether the recent quarter has been generally strong or weak.",
   },
   ret_6m: {
+    label: "6-Month Momentum",
     summary: "The total log return over the last 6 months.",
     more: "This is a medium-term momentum signal. It gives the model a broader price trend than the shorter 1-month and 3-month views.",
   },
   ret_12m: {
+    label: "12-Month Momentum",
     summary: "The total log return over the last 12 months.",
     more: "This is the one-year momentum view. It helps the model compare the current month with longer seasonal and trend patterns in hog prices.",
   },
   ma_gap_3m: {
+    label: "Price vs 3-Month Average",
     summary: "How far the current price sits above or below the 3-month average price.",
     more: "In simple terms, this asks whether the market is stretched relative to its recent level. A positive gap means price is above its short moving average; a negative gap means it is below.",
   },
   ma_gap_12m: {
+    label: "Price vs 12-Month Average",
     summary: "How far the current price sits above or below the 12-month average price.",
     more: "This is the same idea as the 3-month gap, but against the last year instead of the last quarter. It gives a broader view of whether price is rich or weak versus its longer history.",
   },
   vol_3m: {
+    label: "3-Month Volatility",
     summary: "The sample volatility of monthly returns over the last 3 months.",
     more: "This measures how choppy the market has been very recently. Higher values mean price has been moving around more from month to month.",
   },
   vol_12m: {
+    label: "12-Month Volatility",
     summary: "The sample volatility of monthly returns over the last 12 months.",
     more: "This is the longer-run version of recent volatility. It helps the model tell calm market periods apart from more unstable ones.",
   },
   month_sin: {
+    label: "Seasonality (Sine)",
     summary: "A sine-based encoding of the calendar month, used to represent seasonality on a smooth yearly cycle.",
     more: "Months repeat in a circle, not on a straight line. `month_sin` and `month_cos` work together so December and January are treated as close neighbors instead of opposite ends of a numeric scale.",
   },
   month_cos: {
+    label: "Seasonality (Cosine)",
     summary: "A cosine-based encoding of the calendar month, paired with `month_sin` to represent yearly seasonality.",
     more: "On its own this is not very intuitive, but together with `month_sin` it gives the model a clean circular map of the year. That lets it learn seasonal behavior without treating month numbers as a straight line.",
   },
   head_count_avg: {
+    label: "Average Head Count",
     summary: "The average daily head count in the month.",
     more: "In simple terms, this is a rough quantity signal for how many hogs were moving through the report. It gives the model some supply context beyond price alone.",
   },
   live_weight_avg: {
+    label: "Average Live Weight",
     summary: "The average live weight reported during the month.",
     more: "This tells the model how heavy the hogs were before processing. It can help distinguish different market conditions that may not show up in price alone.",
   },
   carcass_weight_avg: {
+    label: "Average Carcass Weight",
     summary: "The average carcass weight reported during the month.",
     more: "This is a processed-weight measure after slaughter. It gives another physical-market context signal that can differ from live weight.",
   },
   sort_loss_avg: {
+    label: "Average Sort Loss",
     summary: "The average sort loss reported during the month.",
     more: "Sort loss reflects deductions or adjustments tied to how hogs fit preferred specifications. It can capture quality or composition effects in the reported market.",
   },
   backfat_avg: {
+    label: "Average Backfat",
     summary: "The average backfat measure reported during the month.",
     more: "This is one of the carcass composition signals in the USDA report. It helps describe what type of hogs were in the market, not just what price they fetched.",
   },
   loin_depth_avg: {
+    label: "Average Loin Depth",
     summary: "The average loin depth reported during the month.",
     more: "Loin depth is another carcass composition measure. In simple terms, it helps describe hog quality and physical characteristics that may matter for how relevant past months really were.",
   },
   lean_percent_avg: {
+    label: "Average Lean Percent",
     summary: "The average lean percent reported during the month.",
     more: "This is the reported share of lean meat. It gives the model a simple quality mix signal from the same USDA report used for price.",
   },
@@ -85,6 +102,18 @@ function slugify(value) {
     .replaceAll(/^-+|-+$/g, "");
 }
 
+function getFeatureMetadata(featureName) {
+  const metadata = FEATURE_METADATA[featureName];
+  if (metadata) {
+    return metadata;
+  }
+  return {
+    label: featureName,
+    summary: `Model feature \`${featureName}\`.`,
+    more: "This feature does not yet have a custom plain-English description in the UI.",
+  };
+}
+
 function importanceList(items, listIdPrefix) {
   if (!items.length) {
     return "<p>No importance values were returned for this run.</p>";
@@ -93,26 +122,21 @@ function importanceList(items, listIdPrefix) {
     .map(
       (item, index) => {
         const featureName = String(item.feature);
-        const explanation = FEATURE_EXPLANATIONS[featureName];
+        const metadata = getFeatureMetadata(featureName);
         const infoId = `${listIdPrefix}-${slugify(featureName)}-${index}`;
         return `
           <li>
             <div class="importance-item-top">
               <div class="importance-item-label">
-                <strong>${escapeHtml(featureName)}</strong>
-                ${
-                  explanation
-                    ? `<button class="info-button" type="button" data-info="${escapeHtml(infoId)}" aria-expanded="false">i</button>`
-                    : ""
-                }
+                <div class="importance-item-copy">
+                  <strong>${escapeHtml(metadata.label)}</strong>
+                  <div class="importance-code"><code>${escapeHtml(featureName)}</code></div>
+                </div>
+                <button class="info-button" type="button" data-info="${escapeHtml(infoId)}" aria-expanded="false">i</button>
               </div>
               <span>${Number(item.importance).toFixed(4)}</span>
             </div>
-            ${
-              explanation
-                ? renderInfoPanel(infoId, explanation.summary, explanation.more)
-                : ""
-            }
+            ${renderInfoPanel(infoId, metadata.summary, metadata.more)}
           </li>
         `;
       },

@@ -75,7 +75,8 @@ describe("app ui", () => {
     const html = renderResults(payload);
     expect(html).toContain("Final Out-of-Sample Month");
     expect(html).toContain("Average Exogenous Importance");
-    expect(html).toContain("loin_depth_avg");
+    expect(html).toContain("Average Loin Depth");
+    expect(html).toContain("<code>loin_depth_avg</code>");
     expect(html).toContain('data-info="corr-info"');
     expect(html).toContain("Correlation between predicted and realized next-month log returns");
     expect(html).toContain('data-info="feature-loin-depth-avg-0"');

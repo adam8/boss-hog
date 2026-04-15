@@ -354,7 +354,23 @@ select,
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.importance-item-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.importance-code {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.importance-code code {
+  font-size: 0.95em;
 }
 
 @media (max-width: 880px) {
