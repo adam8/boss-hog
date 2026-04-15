@@ -55,6 +55,14 @@ const payload = {
   average_exogenous_importance: [{ feature: "loin_depth_avg", importance: 0.21 }],
 };
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return { promise, resolve };
+}
+
 describe("app ui", () => {
   it("builds the backtest query string", () => {
     const dom = makeDom();
@@ -68,6 +76,8 @@ describe("app ui", () => {
     expect(html).toContain("Final Out-of-Sample Month");
     expect(html).toContain("Average Exogenous Importance");
     expect(html).toContain("loin_depth_avg");
+    expect(html).toContain('data-info="corr-info"');
+    expect(html).toContain("Correlation between predicted and realized next-month log returns");
   });
 
   it("toggles the deeper info text with the more button", async () => {
@@ -106,5 +116,47 @@ describe("app ui", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(dom.window.document.getElementById("results-root").innerHTML).toContain("Directional Accuracy");
     expect(dom.window.document.getElementById("status-bar").textContent).toContain("complete");
+  });
+
+  it("shows the hog spinner while the backtest is running", async () => {
+    const dom = makeDom();
+    const pending = deferred();
+    const fetchMock = vi.fn(() => pending.promise);
+
+    const bootPromise = boot(dom.window.document, fetchMock);
+    await Promise.resolve();
+
+    const statusBar = dom.window.document.getElementById("status-bar");
+    expect(statusBar.innerHTML).toContain("status-spinner-logo");
+    expect(statusBar.textContent).toContain("Running backtest");
+    expect(statusBar.className).toContain("status-bar--loading");
+
+    pending.resolve({
+      ok: true,
+      json: async () => payload,
+    });
+    await bootPromise;
+
+    expect(statusBar.textContent).toContain("Backtest complete");
+    expect(statusBar.className).not.toContain("status-bar--loading");
+  });
+
+  it("binds info buttons inside dynamically rendered metric cards", async () => {
+    const dom = makeDom();
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => payload,
+    }));
+
+    await boot(dom.window.document, fetchMock);
+
+    const resultsRoot = dom.window.document.getElementById("results-root");
+    const metricInfoButton = resultsRoot.querySelector("[data-info='corr-info']");
+    const metricInfoPanel = resultsRoot.querySelector("#corr-info");
+
+    expect(metricInfoPanel.hidden).toBe(true);
+
+    metricInfoButton.click();
+    expect(metricInfoPanel.hidden).toBe(false);
   });
 });

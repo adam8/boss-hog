@@ -1,53 +1,44 @@
 from __future__ import annotations
 
-import unittest
+from pathlib import Path
+from unittest import TestCase
+from unittest.mock import patch
 
-from hog_price_baseline import BacktestSummary
-from hog_ui import CORE_FUNDAMENTALS_FEATURE_PACK, PRICE_ONLY_FEATURE_PACK, UIState, render_page
-
-
-class HogUITests(unittest.TestCase):
-    def test_ui_state_parses_defaults_and_checkbox(self) -> None:
-        state = UIState.from_query("feature_pack=core_fundamentals&max_observations=300&force_download=on")
-
-        self.assertEqual(state.feature_pack, CORE_FUNDAMENTALS_FEATURE_PACK)
-        self.assertEqual(state.max_observations, 300)
-        self.assertTrue(state.force_download)
-        self.assertEqual(state.initial_window, 120)
-
-    def test_render_page_includes_info_buttons_and_summary(self) -> None:
-        summary = BacktestSummary(
-            series_name="Prod. Sold (All Purchase Types)",
-            feature_pack=PRICE_ONLY_FEATURE_PACK,
-            feature_names=["ret_1m", "month_sin"],
-            source_path=None,  # type: ignore[arg-type]
-            observation_count=240,
-            train_window=120,
-            prediction_dates=["2026-03-01"],
-            predictions=[0.05],
-            actuals=[0.04],
-            implied_next_prices=[92.02],
-            current_prices=[87.33],
-            next_prices=[90.89],
-            correlation=0.404,
-            directional_accuracy=0.664,
-            average_fit=0.056,
-            average_variable_importance={"month_sin": 0.18, "ret_1m": 0.12},
-            average_exogenous_variable_importance={},
-        )
-
-        html = render_page(UIState(), summary=summary, error=None)
-
-        self.assertIn("Monthly RBP Hog Explorer", html)
-        self.assertIn('src="/app/logo.png"', html)
-        self.assertIn("Boss Hog logo", html)
-        self.assertIn("info-button", html)
-        self.assertIn("more-button", html)
-        self.assertIn("Feature Pack", html)
-        self.assertIn("price_only", html)
-        self.assertIn("Average Feature Importance", html)
-        self.assertIn("month_sin", html)
+from hog_price_baseline import HogObservation
+from hog_ui import APP_ASSET_DIR, DEFAULT_PURCHASE_TYPE, resolve_asset, run_local_backtest
 
 
-if __name__ == "__main__":
-    unittest.main()
+class HogUITests(TestCase):
+    def test_resolve_asset_uses_shared_worker_frontend_files(self) -> None:
+        index_asset = resolve_asset("/")
+        logo_asset = resolve_asset("/app/logo.png")
+
+        self.assertIsNotNone(index_asset)
+        self.assertIsNotNone(logo_asset)
+        self.assertEqual(index_asset[0], APP_ASSET_DIR / "index.html")
+        self.assertEqual(index_asset[1], "text/html; charset=utf-8")
+        self.assertEqual(logo_asset[0], Path("/Users/adamjones/Development/boss-hog/boss-hog-logo.png"))
+        self.assertEqual(logo_asset[1], "image/png")
+
+    def test_run_local_backtest_uses_shared_payload_builder(self) -> None:
+        fake_series = [HogObservation(date="2026-03-31", avg_net_price=90.0)]
+        fake_payload = {"metrics": {"feature_pack": "price_only"}}
+
+        with (
+            patch("hog_ui.download_direct_hog_history", return_value=Path("/tmp/hog-cache.csv")) as download_mock,
+            patch("hog_ui.load_cached_daily_series", return_value=fake_series) as load_mock,
+            patch("hog_ui._timestamp_from_path", return_value="2026-04-14T12:00:00+00:00") as timestamp_mock,
+            patch("hog_ui.aggregate_request_from_daily_series", return_value=fake_payload) as aggregate_mock,
+        ):
+            payload = run_local_backtest({"feature_pack": ["price_only"]})
+
+        self.assertEqual(payload, fake_payload)
+        download_mock.assert_called_once()
+        load_mock.assert_called_once_with(Path("/tmp/hog-cache.csv"))
+        timestamp_mock.assert_called_once_with(Path("/tmp/hog-cache.csv"))
+        aggregate_mock.assert_called_once()
+        _, request = aggregate_mock.call_args.args[:2]
+        self.assertEqual(request.feature_pack, "price_only")
+        self.assertEqual(aggregate_mock.call_args.kwargs["purchase_type"], DEFAULT_PURCHASE_TYPE)
+        self.assertEqual(aggregate_mock.call_args.kwargs["source"], "USDA AMS direct hog avg_net_price")
+        self.assertEqual(aggregate_mock.call_args.kwargs["refreshed_at"], "2026-04-14T12:00:00+00:00")

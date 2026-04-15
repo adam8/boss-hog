@@ -20,7 +20,7 @@ describe("ui worker", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/html");
     const body = await response.text();
-    expect(body).toContain("Private RBP Hog Explorer");
+    expect(body).toContain("Hog Price Prediction Explorer");
     expect(body).toContain("/app/logo.png");
   });
 
