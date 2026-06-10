@@ -100,6 +100,11 @@ h1 {
   padding: 20px;
 }
 
+.panel-heading {
+  display: flex;
+  gap: 10px;
+}
+
 .controls {
   position: sticky;
   top: 18px;
@@ -341,25 +346,34 @@ select,
   gap: 10px;
 }
 
-.importance-list li {
+.importance-chart {
   display: grid;
   gap: 10px;
+}
+
+.importance-scale {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.3;
+}
+
+.importance-list li {
+  display: grid;
+  gap: 12px;
 }
 
 .importance-list strong {
   font-size: 1rem;
 }
 
-.importance-list span {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
 .importance-item-top {
   display: flex;
   justify-content: space-between;
   gap: 18px;
-  align-items: baseline;
+  align-items: flex-start;
 }
 
 .importance-item-label {
@@ -385,9 +399,65 @@ select,
   font-size: 0.95em;
 }
 
+.importance-value {
+  color: var(--accent-strong);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.importance-bar-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(
+    90deg,
+    rgba(143, 107, 82, 0.14) 0%,
+    rgba(143, 107, 82, 0.08) 50%,
+    rgba(142, 75, 45, 0.08) 50%,
+    rgba(142, 75, 45, 0.16) 100%
+  );
+  border: 1px solid rgba(220, 207, 189, 0.9);
+}
+
+.importance-bar-half {
+  display: flex;
+  align-items: stretch;
+}
+
+.importance-bar-half--negative {
+  justify-content: flex-end;
+}
+
+.importance-bar-fill {
+  display: block;
+  height: 100%;
+}
+
+.importance-bar-fill--negative {
+  background: linear-gradient(90deg, #b9967b 0%, #8f6b52 100%);
+}
+
+.importance-bar-fill--positive {
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-strong) 100%);
+}
+
+.importance-bar-zero {
+  position: absolute;
+  left: 50%;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  transform: translateX(-50%);
+  background: rgba(44, 36, 26, 0.24);
+}
+
 .detail-label-row {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   color: var(--muted);
   font-size: 0.88rem;

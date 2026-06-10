@@ -133,14 +133,34 @@ function getFeatureMetadata(featureName) {
   };
 }
 
+function formatImportanceValue(value) {
+  const numericValue = Number(value);
+  const sign = numericValue > 0 ? "+" : "";
+  return `${sign}${numericValue.toFixed(4)}`;
+}
+
 function importanceList(items, listIdPrefix) {
   if (!items.length) {
     return "<p>No importance values were returned for this run.</p>";
   }
-  return `<ol class="importance-list">${items
+
+  const maxAbsoluteImportance = Math.max(
+    ...items.map((item) => Math.abs(Number(item.importance))),
+    Number.EPSILON,
+  );
+
+  return `<div class="importance-chart">
+    <div class="importance-scale" aria-hidden="true">
+      <span>Lower relative importance</span>
+      <span>Higher relative importance</span>
+    </div>
+    <ol class="importance-list">${items
     .map(
       (item, index) => {
         const featureName = String(item.feature);
+        const importance = Number(item.importance);
+        const magnitude = Math.abs(importance);
+        const widthPercent = (magnitude / maxAbsoluteImportance) * 100;
         const metadata = getFeatureMetadata(featureName);
         const infoId = `${listIdPrefix}-${slugify(featureName)}-${index}`;
         return `
@@ -153,14 +173,32 @@ function importanceList(items, listIdPrefix) {
                 </div>
                 <button class="info-button" type="button" data-info="${escapeHtml(infoId)}" aria-expanded="false">i</button>
               </div>
-              <span>${Number(item.importance).toFixed(4)}</span>
+              <span class="importance-value">${formatImportanceValue(importance)}</span>
+            </div>
+            <div class="importance-bar-track" aria-hidden="true">
+              <div class="importance-bar-half importance-bar-half--negative">
+                ${
+                  importance < 0
+                    ? `<span class="importance-bar-fill importance-bar-fill--negative" style="width: ${widthPercent.toFixed(2)}%"></span>`
+                    : ""
+                }
+              </div>
+              <div class="importance-bar-half importance-bar-half--positive">
+                ${
+                  importance > 0
+                    ? `<span class="importance-bar-fill importance-bar-fill--positive" style="width: ${widthPercent.toFixed(2)}%"></span>`
+                    : ""
+                }
+              </div>
+              <span class="importance-bar-zero"></span>
             </div>
             ${renderInfoPanel(infoId, metadata.summary, metadata.more)}
           </li>
         `;
       },
     )
-    .join("")}</ol>`;
+    .join("")}</ol>
+  </div>`;
 }
 
 function renderInfoPanel(id, summary, more) {
@@ -547,7 +585,13 @@ export function renderResults(payload) {
       <section class="panel">
         <div class="panel-heading">
           <h2>Average Feature Importance</h2>
+          <button class="info-button" type="button" data-info="average-feature-importance-info" aria-expanded="false">i</button>
         </div>
+        ${renderInfoPanel(
+          "average-feature-importance-info",
+          "These are relative importance scores, not 0-to-1 percentages.",
+          "Each value compares how strongly RBP cells performed when a feature was included versus excluded, then averages that comparison across the rolling backtest. Positive values mean the feature tended to appear in stronger cells, negative values mean it tended to appear in weaker cells.",
+        )}
         ${importanceList(payload.average_feature_importance, "feature")}
       </section>
 
@@ -556,7 +600,13 @@ export function renderResults(payload) {
           ? `<section class="panel">
                <div class="panel-heading">
                  <h2>Average Exogenous Importance</h2>
+                 <button class="info-button" type="button" data-info="average-exogenous-importance-info" aria-expanded="false">i</button>
                </div>
+               ${renderInfoPanel(
+                 "average-exogenous-importance-info",
+                 "This is the same relative-importance score, but limited to the non-price hog fundamentals.",
+                 "These bars only compare the exogenous USDA hog-market features, such as loin depth or lean percent. They still are not normalized percentages, so it is best to read them as a ranking within this run.",
+               )}
                ${importanceList(payload.average_exogenous_importance, "exogenous")}
              </section>`
           : ""

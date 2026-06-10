@@ -78,7 +78,10 @@ const payload = {
     data_through: "2026-04-14",
     top_feature_importance: [{ feature: "month_cos", importance: 0.19 }],
   },
-  average_feature_importance: [{ feature: "loin_depth_avg", importance: 0.21 }],
+  average_feature_importance: [
+    { feature: "loin_depth_avg", importance: 0.21 },
+    { feature: "month_sin", importance: -0.08 },
+  ],
   average_exogenous_importance: [{ feature: "loin_depth_avg", importance: 0.21 }],
 };
 
@@ -124,6 +127,11 @@ describe("app ui", () => {
     expect(html).toContain("Target Month (monthly average bucket)");
     expect(html).toContain("March 2026");
     expect(html).toContain("<code>2026-03-01</code>");
+    expect(html).toContain("importance-bar-track");
+    expect(html).toContain("+0.2100");
+    expect(html).toContain("-0.0800");
+    expect(html).toContain("Lower relative importance");
+    expect(html).toContain("not 0-to-1 percentages");
   });
 
   it("toggles the deeper info text with the more button", async () => {
@@ -285,5 +293,25 @@ describe("app ui", () => {
     featureInfoButton.click();
     expect(featureInfoPanel.hidden).toBe(false);
     expect(featureInfoPanel.textContent).toContain("carcass composition");
+  });
+
+  it("binds info buttons for average importance section explanations", async () => {
+    const dom = makeDom();
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => payload,
+    }));
+
+    await boot(dom.window.document, fetchMock);
+
+    const resultsRoot = dom.window.document.getElementById("results-root");
+    const sectionInfoButton = resultsRoot.querySelector("[data-info='average-feature-importance-info']");
+    const sectionInfoPanel = resultsRoot.querySelector("#average-feature-importance-info");
+
+    expect(sectionInfoPanel.hidden).toBe(true);
+
+    sectionInfoButton.click();
+    expect(sectionInfoPanel.hidden).toBe(false);
+    expect(sectionInfoPanel.textContent).toContain("not 0-to-1 percentages");
   });
 });
