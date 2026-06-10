@@ -50,6 +50,26 @@ describe("requireAccess", () => {
     });
     expect(response.status).toBe(401);
   });
+
+  it("returns 500 when access validation is misconfigured", async () => {
+    const { requireAccess, resetVerifierForTests } = await import("../src/access.js");
+    resetVerifierForTests();
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const request = new Request("https://example.com/", {
+      headers: {
+        "cf-access-jwt-assertion": buildJwt({
+          iss: "https://example.cloudflareaccess.com",
+          aud: ["aud"],
+          exp: nowSeconds + 300,
+        }),
+      },
+    });
+    const response = await requireAccess(request, {
+      ACCESS_AUD: "aud",
+      REQUIRE_ACCESS_VALIDATION: "true",
+    });
+    expect(response.status).toBe(500);
+  });
 });
 
 function buildJwt(payload) {

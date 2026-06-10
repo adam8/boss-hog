@@ -90,7 +90,8 @@ npm test
 6. In Zero Trust, create a self-hosted Access application for the UI Worker hostname.
 7. Configure one-time PIN login.
 8. Create an allow policy for your email address and the second approved user.
-9. Set the UI Worker runtime secrets or vars:
+9. Set the UI Worker runtime secrets or vars.
+   Prefer Worker secrets over checked-in Wrangler `vars`, so deploys do not accidentally blank the Access settings:
    - `ACCESS_TEAM_DOMAIN`
    - `ACCESS_AUD`
 

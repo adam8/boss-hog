@@ -12,8 +12,6 @@
     }
   ],
   "vars": {
-    "ACCESS_TEAM_DOMAIN": "",
-    "ACCESS_AUD": "",
     "REQUIRE_ACCESS_VALIDATION": "true"
   },
   "observability": {

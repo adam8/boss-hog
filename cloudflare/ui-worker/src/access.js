@@ -41,6 +41,13 @@ export async function requireAccess(request, env) {
     await verifyAccessJwt(token, env);
     return null;
   } catch (error) {
+    console.error(JSON.stringify({
+      event: "access_validation_failed",
+      message: error instanceof Error ? error.message : String(error),
+    }));
+    if (isAccessMisconfigurationError(error)) {
+      return new Response("Cloudflare Access validation is misconfigured.", { status: 500 });
+    }
     return new Response("Invalid Cloudflare Access token.", { status: 403 });
   }
 }
@@ -125,4 +132,14 @@ function decodeBase64Url(value) {
 function base64UrlToBytes(value) {
   const decoded = decodeBase64Url(value);
   return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
+}
+
+function isAccessMisconfigurationError(error) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return (
+    error.message.startsWith("Missing required UI worker variable:") ||
+    error.message.startsWith("Unable to fetch Cloudflare Access certs")
+  );
 }
